@@ -286,7 +286,7 @@ class PiecewiseConstant(BaseSignal):
 
         idx = Array((t - self._start_time) // self._dt, dtype=int)
 
-        return Array(self._samples.data[idx.data])
+        return self._samples[idx.data]
 
     def value(self, t: float = 0.0) -> Array:
         """Return the value of the signal at time t."""
