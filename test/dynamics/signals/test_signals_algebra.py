@@ -18,6 +18,7 @@ Tests for algebraic operations on signals.
 import numpy as np
 
 from qiskit_dynamics.signals import Signal, DiscreteSignal, SignalSum, DiscreteSignalSum
+from qiskit_dynamics.array import Array
 
 from ..common import QiskitDynamicsTestCase, TestJaxBase
 
@@ -89,8 +90,8 @@ class TestSignalMultiplication(QiskitDynamicsTestCase):
         self.assertAllClose(sig_prod.carrier_freq, np.array([5.0, 1.0]))
         self.assertAllClose(sig_prod.phase, np.array([3.6, -3.4]))
 
-        t_vals = np.array([0.1, 0.2, 1.231])
-        self.assertAllClose(sig_prod(t_vals), sig1(t_vals) * sig2(t_vals))
+        t_val = 1.231
+        self.assertAllClose(sig_prod(t_val), sig1(t_val) * sig2(t_val))
 
     def test_DiscreteSignalSum_products(self):
         """More advanced test case for discrete signals."""
@@ -113,8 +114,8 @@ class TestSignalMultiplication(QiskitDynamicsTestCase):
         self.assertAllClose(sig_prod.carrier_freq, expected_freqs)
         self.assertAllClose(sig_prod.phase, expected_phases)
 
-        t_vals = np.array([0.1, 0.2, 1.231])
-        self.assertAllClose(sig_prod(t_vals), sig1(t_vals) * sig2(t_vals) * sig3(t_vals))
+        t_val = 0.2
+        self.assertAllClose(sig_prod(t_val), sig1(t_val) * sig2(t_val) * sig3(t_val))
 
     def test_constant_product(self):
         """Test special handling of constant products."""
@@ -176,20 +177,20 @@ class TestSignalMultiplication(QiskitDynamicsTestCase):
 
         self.assertTrue(isinstance(sig_prod, SignalSum))
         self.assertTrue(len(sig_prod) == 4)
-        t_vals = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 2.2312])
-        s1_vals = sig1.complex_value(t_vals)
-        s2_vals = sig2.complex_value(t_vals)
-        s3_vals = sig3.complex_value(t_vals)
+        t_val = 2.2312
+        s1_vals = Array(sig1.complex_value(t_val))
+        s2_vals = Array(sig2.complex_value(t_val))
+        s3_vals = Array(sig3.complex_value(t_val))
         expected = 0.25 * (
             s1_vals * s2_vals * s3_vals
             + s1_vals * s2_vals.conj() * s3_vals
             + s1_vals * s2_vals * s3_vals.conj()
             + s1_vals * s2_vals.conj() * s3_vals.conj()
         )
-        self.assertAllClose(sig_prod.complex_value(t_vals), expected)
+        self.assertAllClose(sig_prod.complex_value(t_val), expected)
 
-        expected = sig1(t_vals) * sig2(t_vals) * sig3(t_vals)
-        self.assertAllClose(sig_prod(t_vals), expected)
+        expected = sig1(t_val) * sig2(t_val) * sig3(t_val)
+        self.assertAllClose(sig_prod(t_val), expected)
 
 
 class TestSignalAdditionJax(TestSignalAddition, TestJaxBase):
@@ -217,48 +218,48 @@ class TestSignalAlgebraJaxTransformations(QiskitDynamicsTestCase, TestJaxBase):
     def test_jit_sum(self):
         """Test jitting a function that involves constructing a SignalSum."""
 
-        t_vals = np.array([1.0, 3.0, 0.1232])
-        self._test_jit_sum_eval(self.signal, self.signal, t_vals)
-        self._test_jit_sum_eval(self.constant, self.signal, t_vals)
-        self._test_jit_sum_eval(self.signal, self.signal, t_vals)
-        self._test_jit_sum_eval(self.discrete_signal, self.signal, t_vals)
-        self._test_jit_sum_eval(self.discrete_signal, self.discrete_signal, t_vals)
-        self._test_jit_sum_eval(self.discrete_signal_sum, self.signal_sum, t_vals)
+        t_val = 0.1232
+        self._test_jit_sum_eval(self.signal, self.signal, t_val)
+        self._test_jit_sum_eval(self.constant, self.signal, t_val)
+        self._test_jit_sum_eval(self.signal, self.signal, t_val)
+        self._test_jit_sum_eval(self.discrete_signal, self.signal, t_val)
+        self._test_jit_sum_eval(self.discrete_signal, self.discrete_signal, t_val)
+        self._test_jit_sum_eval(self.discrete_signal_sum, self.signal_sum, t_val)
 
     def test_jit_grad_sum(self):
         """Test that the jit of a grad of a sum can be computed without error."""
 
-        t_vals = 0.233234
-        self._test_grad_jit_sum_eval(self.signal, self.signal, t_vals)
-        self._test_grad_jit_sum_eval(self.constant, self.signal, t_vals)
-        self._test_grad_jit_sum_eval(self.signal, self.signal, t_vals)
-        self._test_grad_jit_sum_eval(self.discrete_signal, self.signal, t_vals)
-        self._test_grad_jit_sum_eval(self.discrete_signal, self.discrete_signal, t_vals)
-        self._test_grad_jit_sum_eval(self.discrete_signal_sum, self.signal_sum, t_vals)
+        t_val = 0.233234
+        self._test_grad_jit_sum_eval(self.signal, self.signal, t_val)
+        self._test_grad_jit_sum_eval(self.constant, self.signal, t_val)
+        self._test_grad_jit_sum_eval(self.signal, self.signal, t_val)
+        self._test_grad_jit_sum_eval(self.discrete_signal, self.signal, t_val)
+        self._test_grad_jit_sum_eval(self.discrete_signal, self.discrete_signal, t_val)
+        self._test_grad_jit_sum_eval(self.discrete_signal_sum, self.signal_sum, t_val)
 
     def test_jit_prod(self):
         """Test jitting a function that involves multiplying signals."""
 
-        t_vals = np.array([1.0, 3.0, 0.1232])
-        self._test_jit_prod_eval(self.signal, self.signal, t_vals)
-        self._test_jit_prod_eval(self.constant, self.signal, t_vals)
-        self._test_jit_prod_eval(self.signal, self.signal, t_vals)
-        self._test_jit_prod_eval(self.discrete_signal, self.signal, t_vals)
-        self._test_jit_prod_eval(self.discrete_signal, self.discrete_signal, t_vals)
-        self._test_jit_prod_eval(self.discrete_signal_sum, self.signal_sum, t_vals)
+        t_val = 3.0
+        self._test_jit_prod_eval(self.signal, self.signal, t_val)
+        self._test_jit_prod_eval(self.constant, self.signal, t_val)
+        self._test_jit_prod_eval(self.signal, self.signal, t_val)
+        self._test_jit_prod_eval(self.discrete_signal, self.signal, t_val)
+        self._test_jit_prod_eval(self.discrete_signal, self.discrete_signal, t_val)
+        self._test_jit_prod_eval(self.discrete_signal_sum, self.signal_sum, t_val)
 
     def test_jit_grad_prod(self):
         """Test jitting a function that involves constructing a SignalSum."""
 
-        t_vals = 0.233234
-        self._test_grad_jit_prod_eval(self.signal, self.signal, t_vals)
-        self._test_grad_jit_prod_eval(self.constant, self.signal, t_vals)
-        self._test_grad_jit_prod_eval(self.signal, self.signal, t_vals)
-        self._test_grad_jit_prod_eval(self.discrete_signal, self.signal, t_vals)
-        self._test_grad_jit_prod_eval(self.discrete_signal, self.discrete_signal, t_vals)
-        self._test_grad_jit_prod_eval(self.discrete_signal_sum, self.signal_sum, t_vals)
+        t_val = 0.233234
+        self._test_grad_jit_prod_eval(self.signal, self.signal, t_val)
+        self._test_grad_jit_prod_eval(self.constant, self.signal, t_val)
+        self._test_grad_jit_prod_eval(self.signal, self.signal, t_val)
+        self._test_grad_jit_prod_eval(self.discrete_signal, self.signal, t_val)
+        self._test_grad_jit_prod_eval(self.discrete_signal, self.discrete_signal, t_val)
+        self._test_grad_jit_prod_eval(self.discrete_signal_sum, self.signal_sum, t_val)
 
-    def _test_jit_sum_eval(self, sig1, sig2, t_vals):
+    def _test_jit_sum_eval(self, sig1, sig2, t_val):
         """jit compilation and evaluation of added signals."""
 
         def eval_func(t):
@@ -266,7 +267,7 @@ class TestSignalAlgebraJaxTransformations(QiskitDynamicsTestCase, TestJaxBase):
             return sig_sum(t).data
 
         jit_eval_func = jit(eval_func)
-        self.assertAllClose(jit_eval_func(t_vals), eval_func(t_vals))
+        self.assertAllClose(jit_eval_func(t_val), eval_func(t_val))
 
     def _test_grad_jit_sum_eval(self, sig1, sig2, t):
         """Verify that the grad of the sum of two signals can be compiled."""
@@ -278,7 +279,7 @@ class TestSignalAlgebraJaxTransformations(QiskitDynamicsTestCase, TestJaxBase):
         jit_eval_func = jit(grad(eval_func))
         jit_eval_func(t)
 
-    def _test_jit_prod_eval(self, sig1, sig2, t_vals):
+    def _test_jit_prod_eval(self, sig1, sig2, t_val):
         """jit compilation and evaluation of added signals."""
 
         def eval_func(t):
@@ -286,7 +287,7 @@ class TestSignalAlgebraJaxTransformations(QiskitDynamicsTestCase, TestJaxBase):
             return sig_sum(t).data
 
         jit_eval_func = jit(eval_func)
-        self.assertAllClose(jit_eval_func(t_vals), eval_func(t_vals))
+        self.assertAllClose(jit_eval_func(t_val), eval_func(t_val))
 
     def _test_grad_jit_prod_eval(self, sig1, sig2, t):
         """Verify that the grad of the product of two signals can be compiled."""

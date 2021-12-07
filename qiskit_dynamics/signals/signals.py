@@ -51,23 +51,6 @@ class Signal:
     The envelope function can be specified either as a constant numeric value
     (indicating a constant function), or as a complex-valued callable,
     and the frequency and phase must be real.
-
-
-    .. note::
-
-        :class:`~qiskit_dynamics.signals.Signal` assumes the envelope ``f`` is
-        *array vectorized* in the sense that ``f`` can operate on arrays of arbitrary shape
-        and satisfy ``f(x)[idx] == f(x[idx])`` for a multidimensional index ``idx``. This
-        can be ensured either by writing ``f`` to be vectorized, or by using the ``vectorize``
-        function in ``numpy`` or ``jax.numpy``.
-
-        For example, for an unvectorized envelope function ``f``:
-
-        .. code-block:: python
-
-            import numpy as np
-            vectorized_f = np.vectorize(f)
-            signal = Signal(envelope=vectorized_f, carrier_freq=2.)
     """
 
     def __init__(
@@ -101,9 +84,9 @@ class Signal:
                 self._is_constant = True
 
             if envelope.backend == "jax":
-                self._envelope = lambda t: envelope * jnp.ones_like(t)
+                self._envelope = lambda t: envelope
             else:
-                self._envelope = lambda t: envelope * np.ones_like(t)
+                self._envelope = lambda t: envelope
         elif callable(envelope):
             if Array.default_backend() == "jax":
                 self._envelope = lambda t: Array(envelope(t))
@@ -153,16 +136,16 @@ class Signal:
         self._phase_arg = 1j * self._phase
 
     def envelope(self, t: Union[float, np.array, Array]) -> Union[complex, np.array, Array]:
-        """Vectorized evaluation of the envelope at time t."""
+        """Evaluation of the envelope at time t."""
         return self._envelope(t)
 
     def complex_value(self, t: Union[float, np.array, Array]) -> Union[complex, np.array, Array]:
-        """Vectorized evaluation of the complex value at time t."""
+        """Evaluation of the complex value at time t."""
         arg = self._carrier_arg * t + self._phase_arg
         return self.envelope(t) * np.exp(arg)
 
     def __call__(self, t: Union[float, np.array, Array]) -> Union[complex, np.array, Array]:
-        """Vectorized evaluation of the signal at time(s) t."""
+        """Evaluation of the signal at time(s) t."""
         return np.real(self.complex_value(t))
 
     def __str__(self) -> str:
@@ -245,14 +228,14 @@ class Signal:
         y_vals = None
         data_type = "real"
         if function == "signal":
-            y_vals = self(t_vals)
+            y_vals = [self(t) for t in t_vals]
             title = title or "Value of " + str(self)
         elif function == "envelope":
-            y_vals = self.envelope(t_vals)
+            y_vals = [self.envelope(t) for t in t_vals]
             data_type = "complex"
             title = title or "Envelope of " + str(self)
         elif function == "complex_value":
-            y_vals = self.complex_value(t_vals)
+            y_vals = [self.complex_value(t) for t in t_vals]
             data_type = "complex"
             title = title or "Complex value of " + str(self)
 
@@ -595,7 +578,7 @@ class SignalSum(SignalCollection, Signal):
         """Return the sum of the complex values of each component."""
         if Array.default_backend() == "jax":
             t = Array(t)
-        exp_phases = np.exp(np.expand_dims(t, -1) * self._carrier_arg + self._phase_arg)
+        exp_phases = np.exp(t * self._carrier_arg + self._phase_arg)
         return np.sum(self.envelope(t) * exp_phases, axis=-1)
 
     def __str__(self):
@@ -821,11 +804,11 @@ class SignalList(SignalCollection):
             self._eval_signals = lambda t: [sig(t) for sig in self.components]
 
     def complex_value(self, t: Union[float, np.array, Array]) -> Union[np.array, Array]:
-        """Vectorized evaluation of complex value of components."""
+        """Evaluation of complex value of components."""
         return np.moveaxis(self._eval_complex_value(t), 0, -1)
 
     def __call__(self, t: Union[float, np.array, Array]) -> Union[np.array, Array]:
-        """Vectorized evaluation of all components."""
+        """Evaluation of all components."""
         return np.moveaxis(self._eval_signals(t), 0, -1)
 
     def flatten(self) -> "SignalList":
