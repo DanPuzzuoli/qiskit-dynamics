@@ -172,6 +172,7 @@ Perturbation module API
     solve_lmde_perturbation
     PerturbationResults
     PerturbativeSolver
+    schrieffer_wolff
 
 .. footbibliography::
 """
@@ -179,5 +180,6 @@ Perturbation module API
 from .multiset import Multiset
 from .array_polynomial import ArrayPolynomial
 from .solve_lmde_perturbation import solve_lmde_perturbation
+from .schrieffer_wolff import schrieffer_wolff
 from .perturbation_results import PerturbationResults
 from .perturbative_solver import PerturbativeSolver

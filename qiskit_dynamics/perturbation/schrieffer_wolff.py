@@ -23,12 +23,15 @@ from qiskit_dynamics.perturbation import ArrayPolynomial, Multiset
 from qiskit_dynamics.perturbation.multiset import get_all_submultisets
 from qiskit_dynamics.perturbation.solve_lmde_perturbation import merge_expansion_order_indices
 
-def schrieffer_wolff(H0: np.ndarray,
-                     perturbations: List[np.ndarray],
-                     expansion_order: Optional[int] = None,
-                     expansion_labels: Optional[List[Multiset]] = None,
-                     perturbation_labels: Optional[List[Multiset]] = None,
-                     tol: Optional[float] = 1e-15) -> ArrayPolynomial:
+
+def schrieffer_wolff(
+    H0: np.ndarray,
+    perturbations: List[np.ndarray],
+    expansion_order: Optional[int] = None,
+    expansion_labels: Optional[List[Multiset]] = None,
+    perturbation_labels: Optional[List[Multiset]] = None,
+    tol: Optional[float] = 1e-15,
+) -> ArrayPolynomial:
     """Construct truncated multi-variable Schrieffer-Wolff transformation.
 
     Not sure what the correct output should be but the ``ArrayPolynomial`` will contain
@@ -46,6 +49,10 @@ def schrieffer_wolff(H0: np.ndarray,
           be vectorized (due to the conditionals). May want to consider modifying things so
           that it explicitly works with 2d arrays, otherwise the "vectorized" stuff is just
           confusing to read
+
+    To do:
+        - Maybe validate that that everything is hermitian, and add an anti-hermitian projection
+        step at the end for the perturbation terms
     """
 
     ##################################################################################################
@@ -62,10 +69,9 @@ def schrieffer_wolff(H0: np.ndarray,
         perturbation_labels = [Multiset({k: 1}) for k in range(len(perturbations))]
 
     # get all requested terms in the expansion
-    expansion_labels = merge_expansion_order_indices(expansion_order,
-                                                     expansion_labels,
-                                                     perturbation_labels,
-                                                     symmetric=True)
+    expansion_labels = merge_expansion_order_indices(
+        expansion_order, expansion_labels, perturbation_labels, symmetric=True
+    )
     expansion_labels = get_all_submultisets(expansion_labels)
 
     # construct labels for recursive computation
@@ -83,17 +89,17 @@ def schrieffer_wolff(H0: np.ndarray,
     rhs_mat = None
 
     # recursively compute all matrices
-    for (recursive_idx, (expansion_label, recursion_order)) in enumerate(recursive_labels):
+    for (recursive_idx, (expansion_label, commutator_order)) in enumerate(recursive_labels):
         expansion_idx = expansion_labels.index(expansion_label)
-
-        if recursion_order == len(expansion_label):
+        
+        # initialize rhs matrix at first occurence of current expansion_label
+        if commutator_order == len(expansion_label):
             rhs_mat = np.zeros(mat_shape, dtype=complex)
 
-        # if recursion_order == 1, need to compute the expansion_term for expansion_label
-        # and initialize recursion base cases
-        if recursion_order == 1:
-            # if expansion_label in perturbation labels, add to rhs and initialize
-            # recursive_B base case
+        # if commutator_order == 1, all terms required to determine term for current
+        # expansion_label are computed, so solve for the term and initialize
+        # base cases of recursive matrices that depend on it
+        if commutator_order == 1:
             if expansion_label in perturbation_labels:
                 rhs_mat = rhs_mat + perturbations[expansion_idx]
                 recursive_B[recursive_idx] = perturbations[expansion_idx]
@@ -103,21 +109,23 @@ def schrieffer_wolff(H0: np.ndarray,
             # initialize recursive_A base case
             recursive_A[recursive_idx] = commutator(expansion_terms[expansion_idx], H0)
         else:
-            # get all 2-fold partitions
-            submultisets, complements = expansion_label.submultisets_and_complements()
+            # get all 2-fold partitions, bounding the submultisets to have size
+            # <= len(expansion_label) - (commutator_order - 1)
+            submultisets, complements = expansion_label.submultisets_and_complements(len(expansion_label) - commutator_order + 2)
             for submultiset, complement in zip(submultisets, complements):
-                if len(complement) >= recursion_order - 1:
-                    SI = expansion_terms[expansion_labels.index(submultiset)]
-                    recursive_lower_idx = recursive_labels.index((complement, recursion_order - 1))
-                    recursive_A[recursive_idx] += commutator(SI, recursive_A[recursive_lower_idx])
-                    recursive_B[recursive_idx] += commutator(SI, recursive_B[recursive_lower_idx])
+                SI = expansion_terms[expansion_labels.index(submultiset)]
+                recursive_lower_idx = recursive_labels.index((complement, commutator_order - 1))
+                recursive_A[recursive_idx] = recursive_A[recursive_idx] + commutator(SI, recursive_A[recursive_lower_idx])
+                recursive_B[recursive_idx] = recursive_B[recursive_idx] + commutator(SI, recursive_B[recursive_lower_idx])
 
-            recursive_A[recursive_idx] = recursive_A[recursive_idx] / recursion_order
-            recursive_B[recursive_idx] = recursive_B[recursive_idx] / (recursion_order - 1)
+            recursive_A[recursive_idx] = recursive_A[recursive_idx] / commutator_order
+            recursive_B[recursive_idx] = recursive_B[recursive_idx] / (commutator_order - 1)
             rhs_mat = rhs_mat + recursive_A[recursive_idx] + recursive_B[recursive_idx]
 
-    return ArrayPolynomial(array_coefficients=expansion_terms,
-                           monomial_multisets=expansion_labels)
+    # project onto anti-hermitian matrices
+    expansion_terms = 0.5 * (expansion_terms - expansion_terms.conj().transpose((0, 2, 1)))
+
+    return ArrayPolynomial(array_coefficients=expansion_terms, monomial_multisets=expansion_labels)
 
 
 def solve_commutator_projection(H0, rhs_mat, tol=1e-15):
@@ -142,7 +150,7 @@ def project_off_diagonal(A):
     """
     A = A.copy()
     k = min(A.shape[-2:])
-    A[..., range(k), range(k)] = 0.
+    A[..., range(k), range(k)] = 0.0
     return A
 
 

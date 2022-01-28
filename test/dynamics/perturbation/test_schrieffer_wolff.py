@@ -22,7 +22,7 @@ from ..common import QiskitDynamicsTestCase
 
 
 class Testschrieffer_wolff(QiskitDynamicsTestCase):
-    """Test schrieffer_wolff function."""
+    """Test schrieffer_wolff_recursive_construction function."""
 
     def test_simple_case(self):
         """Test a simple case with Pauli operators."""
@@ -68,10 +68,10 @@ class Testschrieffer_wolff(QiskitDynamicsTestCase):
                 + commutator(S2, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
                 + commutator(S1, commutator(S2, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
                 + commutator(S1, commutator(S1, commutator(S2, commutator(S1, H0) / 24 + H1 / 6)))
-                + commutator(S1, commutator(S1, commutator(S1, commutator(S2, H0) / 24))))
+                + commutator(S1, commutator(S1, commutator(S1, commutator(S2, H0) / 24)))
+                + commutator(S1, commutator(S1, commutator(S1, commutator(S1, commutator(S1, H0) / (24 * 5) + H1 / 24)))))
         S5 = solve_commutator_projection(H0, rhs5)
 
         expected = np.array([S1, S2, S3, S4, S5])
         output = schrieffer_wolff(H0, perturbations=[H1], expansion_order=5).array_coefficients
-
         self.assertAllClose(expected, output)
