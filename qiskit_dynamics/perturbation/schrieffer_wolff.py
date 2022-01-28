@@ -91,7 +91,7 @@ def schrieffer_wolff(
     # recursively compute all matrices
     for (recursive_idx, (expansion_label, commutator_order)) in enumerate(recursive_labels):
         expansion_idx = expansion_labels.index(expansion_label)
-        
+
         # initialize rhs matrix at first occurence of current expansion_label
         if commutator_order == len(expansion_label):
             rhs_mat = np.zeros(mat_shape, dtype=complex)
@@ -115,8 +115,8 @@ def schrieffer_wolff(
             for submultiset, complement in zip(submultisets, complements):
                 SI = expansion_terms[expansion_labels.index(submultiset)]
                 recursive_lower_idx = recursive_labels.index((complement, commutator_order - 1))
-                recursive_A[recursive_idx] = recursive_A[recursive_idx] + commutator(SI, recursive_A[recursive_lower_idx])
-                recursive_B[recursive_idx] = recursive_B[recursive_idx] + commutator(SI, recursive_B[recursive_lower_idx])
+                recursive_A[recursive_idx] += commutator(SI, recursive_A[recursive_lower_idx])
+                recursive_B[recursive_idx] += commutator(SI, recursive_B[recursive_lower_idx])
 
             recursive_A[recursive_idx] = recursive_A[recursive_idx] / commutator_order
             recursive_B[recursive_idx] = recursive_B[recursive_idx] / (commutator_order - 1)
