@@ -46,30 +46,39 @@ class Testschrieffer_wolff(QiskitDynamicsTestCase):
         )
         S3 = solve_commutator_projection(H0, rhs3)
 
-        rhs4 = (commutator(S3, 0.5 * commutator(S1, H0) + H1)
-                + commutator(S2, 0.5 * commutator(S2, H0))
-                + commutator(S1, 0.5 * commutator(S3, H0))
-                + commutator(S2, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S1, commutator(S2, H0) / 6))
-                + commutator(S1, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6))))
+        rhs4 = (
+            commutator(S3, 0.5 * commutator(S1, H0) + H1)
+            + commutator(S2, 0.5 * commutator(S2, H0))
+            + commutator(S1, 0.5 * commutator(S3, H0))
+            + commutator(S2, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S1, commutator(S2, H0) / 6))
+            + commutator(S1, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
+        )
         S4 = solve_commutator_projection(H0, rhs4)
 
-        rhs5 = (commutator(S4, 0.5 * commutator(S1, H0) + H1)
-                + commutator(S1, 0.5 * commutator(S4, H0))
-                + commutator(S3, 0.5 * commutator(S2, H0))
-                + commutator(S2, 0.5 * commutator(S3, H0))
-                + commutator(S3, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S3, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S1, commutator(S3, H0) / 6))
-                + commutator(S2, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S2, commutator(S1, commutator(S2, H0) / 6))
-                + commutator(S1, commutator(S2, commutator(S2, H0) / 6))
-                + commutator(S2, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
-                + commutator(S1, commutator(S2, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
-                + commutator(S1, commutator(S1, commutator(S2, commutator(S1, H0) / 24 + H1 / 6)))
-                + commutator(S1, commutator(S1, commutator(S1, commutator(S2, H0) / 24)))
-                + commutator(S1, commutator(S1, commutator(S1, commutator(S1, commutator(S1, H0) / (24 * 5) + H1 / 24)))))
+        rhs5 = (
+            commutator(S4, 0.5 * commutator(S1, H0) + H1)
+            + commutator(S1, 0.5 * commutator(S4, H0))
+            + commutator(S3, 0.5 * commutator(S2, H0))
+            + commutator(S2, 0.5 * commutator(S3, H0))
+            + commutator(S3, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S3, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S1, commutator(S3, H0) / 6))
+            + commutator(S2, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S2, commutator(S1, commutator(S2, H0) / 6))
+            + commutator(S1, commutator(S2, commutator(S2, H0) / 6))
+            + commutator(S2, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
+            + commutator(S1, commutator(S2, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
+            + commutator(S1, commutator(S1, commutator(S2, commutator(S1, H0) / 24 + H1 / 6)))
+            + commutator(S1, commutator(S1, commutator(S1, commutator(S2, H0) / 24)))
+            + commutator(
+                S1,
+                commutator(
+                    S1, commutator(S1, commutator(S1, commutator(S1, H0) / (24 * 5) + H1 / 24))
+                ),
+            )
+        )
         S5 = solve_commutator_projection(H0, rhs5)
 
         expected = np.array([S1, S2, S3, S4, S5])
@@ -79,7 +88,7 @@ class Testschrieffer_wolff(QiskitDynamicsTestCase):
     def test_simple_single_variable_polynomial_case(self):
         """Test a single variable polynomial case."""
         X = np.array([[0.0, 1.0], [1.0, 0.0]])
-        Y = np.array([[0., -1j], [1j, 0.]])
+        Y = np.array([[0.0, -1j], [1j, 0.0]])
         Z = np.array([[1.0, 0.0], [0.0, -1.0]])
 
         H0 = Z
@@ -101,34 +110,48 @@ class Testschrieffer_wolff(QiskitDynamicsTestCase):
         )
         S3 = solve_commutator_projection(H0, rhs3)
 
-        rhs4 = (commutator(S3, 0.5 * commutator(S1, H0) + H1)
-                + commutator(S2, 0.5 * commutator(S2, H0) + H11)
-                + commutator(S1, 0.5 * commutator(S3, H0) + H111)
-                + commutator(S2, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S1, commutator(S2, H0) / 6 + H11 / 2))
-                + commutator(S1, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6))))
+        rhs4 = (
+            commutator(S3, 0.5 * commutator(S1, H0) + H1)
+            + commutator(S2, 0.5 * commutator(S2, H0) + H11)
+            + commutator(S1, 0.5 * commutator(S3, H0) + H111)
+            + commutator(S2, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S1, commutator(S2, H0) / 6 + H11 / 2))
+            + commutator(S1, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
+        )
         S4 = solve_commutator_projection(H0, rhs4)
 
-        rhs5 = (commutator(S4, 0.5 * commutator(S1, H0) + H1)
-                + commutator(S1, 0.5 * commutator(S4, H0))
-                + commutator(S3, 0.5 * commutator(S2, H0) + H11)
-                + commutator(S2, 0.5 * commutator(S3, H0) + H111)
-                + commutator(S3, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S3, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S1, commutator(S1, commutator(S3, H0) / 6 + H111 / 2))
-                + commutator(S2, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
-                + commutator(S2, commutator(S1, commutator(S2, H0) / 6 + H11 / 2))
-                + commutator(S1, commutator(S2, commutator(S2, H0) / 6 + H11 / 2))
-                + commutator(S2, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
-                + commutator(S1, commutator(S2, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
-                + commutator(S1, commutator(S1, commutator(S2, commutator(S1, H0) / 24 + H1 / 6)))
-                + commutator(S1, commutator(S1, commutator(S1, commutator(S2, H0) / 24 + H11 / 6)))
-                + commutator(S1, commutator(S1, commutator(S1, commutator(S1, commutator(S1, H0) / (24 * 5) + H1 / 24)))))
+        rhs5 = (
+            commutator(S4, 0.5 * commutator(S1, H0) + H1)
+            + commutator(S1, 0.5 * commutator(S4, H0))
+            + commutator(S3, 0.5 * commutator(S2, H0) + H11)
+            + commutator(S2, 0.5 * commutator(S3, H0) + H111)
+            + commutator(S3, commutator(S1, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S3, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S1, commutator(S1, commutator(S3, H0) / 6 + H111 / 2))
+            + commutator(S2, commutator(S2, commutator(S1, H0) / 6 + H1 / 2))
+            + commutator(S2, commutator(S1, commutator(S2, H0) / 6 + H11 / 2))
+            + commutator(S1, commutator(S2, commutator(S2, H0) / 6 + H11 / 2))
+            + commutator(S2, commutator(S1, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
+            + commutator(S1, commutator(S2, commutator(S1, commutator(S1, H0) / 24 + H1 / 6)))
+            + commutator(S1, commutator(S1, commutator(S2, commutator(S1, H0) / 24 + H1 / 6)))
+            + commutator(S1, commutator(S1, commutator(S1, commutator(S2, H0) / 24 + H11 / 6)))
+            + commutator(
+                S1,
+                commutator(
+                    S1, commutator(S1, commutator(S1, commutator(S1, H0) / (24 * 5) + H1 / 24))
+                ),
+            )
+        )
         S5 = solve_commutator_projection(H0, rhs5)
 
         expected = np.array([S1, S2, S3, S4, S5])
-        output = schrieffer_wolff(H0, perturbations=[H1, H11, H111], perturbation_labels=[Multiset({0: k}) for k in range(1, 4)], expansion_order=5).array_coefficients
+        output = schrieffer_wolff(
+            H0,
+            perturbations=[H1, H11, H111],
+            perturbation_labels=[Multiset({0: k}) for k in range(1, 4)],
+            expansion_order=5,
+        ).array_coefficients
         self.assertAllClose(expected, output)
 
     def test_random_multiple_perturbations(self):
@@ -162,48 +185,53 @@ class Testschrieffer_wolff(QiskitDynamicsTestCase):
         rhs00 = H00 + commutator(S0, 0.5 * commutator(S0, Hd) + H0)
         S00 = solve_commutator_projection(Hd, rhs00)
 
-        rhs01 = H01 + commutator(S0, 0.5 * commutator(S1, Hd) + H1) + commutator(S1, 0.5 * commutator(S0, Hd) + H0)
+        rhs01 = (
+            H01
+            + commutator(S0, 0.5 * commutator(S1, Hd) + H1)
+            + commutator(S1, 0.5 * commutator(S0, Hd) + H0)
+        )
         S01 = solve_commutator_projection(Hd, rhs01)
 
         rhs11 = commutator(S1, 0.5 * commutator(S1, Hd) + H1)
         S11 = solve_commutator_projection(Hd, rhs11)
 
-        rhs000 = (commutator(S0, 0.5 * commutator(S00, Hd) + H00)
-        + commutator(S00, 0.5 * commutator(S0, Hd) + H0)
-        + commutator(S0, commutator(S0, commutator(S0, Hd) / 6 + H0 / 2))
+        rhs000 = (
+            commutator(S0, 0.5 * commutator(S00, Hd) + H00)
+            + commutator(S00, 0.5 * commutator(S0, Hd) + H0)
+            + commutator(S0, commutator(S0, commutator(S0, Hd) / 6 + H0 / 2))
         )
         S000 = solve_commutator_projection(Hd, rhs000)
 
         rhs001 = (
-        commutator(S0, 0.5 * commutator(S01, Hd) + H01)
-        + commutator(S1, 0.5 * commutator(S00, Hd) + H00)
-        + commutator(S00, 0.5 * commutator(S1, Hd) + H1)
-        + commutator(S01, 0.5 * commutator(S0, Hd) + H0)
-        + commutator(S0, commutator(S0, commutator(S1, Hd) / 6 + H1 / 2))
-        + commutator(S0, commutator(S1, commutator(S0, Hd) / 6 + H0 / 2))
-        + commutator(S1, commutator(S0, commutator(S0, Hd) / 6 + H0 / 2))
+            commutator(S0, 0.5 * commutator(S01, Hd) + H01)
+            + commutator(S1, 0.5 * commutator(S00, Hd) + H00)
+            + commutator(S00, 0.5 * commutator(S1, Hd) + H1)
+            + commutator(S01, 0.5 * commutator(S0, Hd) + H0)
+            + commutator(S0, commutator(S0, commutator(S1, Hd) / 6 + H1 / 2))
+            + commutator(S0, commutator(S1, commutator(S0, Hd) / 6 + H0 / 2))
+            + commutator(S1, commutator(S0, commutator(S0, Hd) / 6 + H0 / 2))
         )
         S001 = solve_commutator_projection(Hd, rhs001)
 
         rhs011 = (
-        commutator(S0, 0.5 * commutator(S11, Hd))
-        + commutator(S1, 0.5 * commutator(S01, Hd) + H01)
-        + commutator(S01, 0.5 * commutator(S1, Hd) + H1)
-        + commutator(S11, 0.5 * commutator(S0, Hd) + H0)
-        + commutator(S0, commutator(S1, commutator(S1, Hd) / 6 + H1 / 2))
-        + commutator(S1, commutator(S0, commutator(S1, Hd) / 6 + H1 / 2))
-        + commutator(S1, commutator(S1, commutator(S0, Hd) / 6 + H0 / 2))
+            commutator(S0, 0.5 * commutator(S11, Hd))
+            + commutator(S1, 0.5 * commutator(S01, Hd) + H01)
+            + commutator(S01, 0.5 * commutator(S1, Hd) + H1)
+            + commutator(S11, 0.5 * commutator(S0, Hd) + H0)
+            + commutator(S0, commutator(S1, commutator(S1, Hd) / 6 + H1 / 2))
+            + commutator(S1, commutator(S0, commutator(S1, Hd) / 6 + H1 / 2))
+            + commutator(S1, commutator(S1, commutator(S0, Hd) / 6 + H0 / 2))
         )
         S011 = solve_commutator_projection(Hd, rhs011)
 
         rhs111 = (
-        commutator(S1, 0.5 * commutator(S11, Hd))
-        + commutator(S11, 0.5 * commutator(S1, Hd) + H1)
-        + commutator(S1, commutator(S1, commutator(S1, Hd) / 6 + H1 / 2))
+            commutator(S1, 0.5 * commutator(S11, Hd))
+            + commutator(S11, 0.5 * commutator(S1, Hd) + H1)
+            + commutator(S1, commutator(S1, commutator(S1, Hd) / 6 + H1 / 2))
         )
         S111 = solve_commutator_projection(Hd, rhs111)
 
-        rhs0000 =(
+        rhs0000 = (
             commutator(S0, 0.5 * commutator(S000, Hd))
             + commutator(S00, 0.5 * commutator(S00, Hd) + H00)
             + commutator(S000, 0.5 * commutator(S0, Hd) + H0)
@@ -215,9 +243,16 @@ class Testschrieffer_wolff(QiskitDynamicsTestCase):
         S0000 = solve_commutator_projection(Hd, rhs0000)
 
         expected = np.array([S0, S1, S00, S01, S11, S000, S001, S011, S111, S0000])
-        output = schrieffer_wolff(Hd,
-                                  perturbations=[H0, H1, H00, H01],
-                                  perturbation_labels=[Multiset({0: 1}), Multiset({1: 1}), Multiset({0: 2}), Multiset({0: 1, 1: 1})],
-                                  expansion_order=3,
-                                  expansion_labels=[Multiset({0: 4})]).array_coefficients
+        output = schrieffer_wolff(
+            Hd,
+            perturbations=[H0, H1, H00, H01],
+            perturbation_labels=[
+                Multiset({0: 1}),
+                Multiset({1: 1}),
+                Multiset({0: 2}),
+                Multiset({0: 1, 1: 1}),
+            ],
+            expansion_order=3,
+            expansion_labels=[Multiset({0: 4})],
+        ).array_coefficients
         self.assertAllClose(expected, output)

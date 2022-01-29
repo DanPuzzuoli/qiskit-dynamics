@@ -112,7 +112,9 @@ def schrieffer_wolff(
         else:
             # get all 2-fold partitions, bounding the submultisets to have size
             # <= len(expansion_label) - (commutator_order - 1)
-            submultisets, complements = expansion_label.submultisets_and_complements(len(expansion_label) - commutator_order + 2)
+            submultisets, complements = expansion_label.submultisets_and_complements(
+                len(expansion_label) - commutator_order + 2
+            )
             for submultiset, complement in zip(submultisets, complements):
                 SI = expansion_terms[expansion_labels.index(submultiset)]
                 recursive_lower_idx = recursive_labels.index((complement, commutator_order - 1))
