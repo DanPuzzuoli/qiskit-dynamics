@@ -128,19 +128,19 @@ def schrieffer_wolff(
     return ArrayPolynomial(array_coefficients=expansion_terms, monomial_multisets=expansion_labels)
 
 
-def solve_commutator_projection(H0, rhs_mat, tol=1e-15):
-    """Solve [H0, X] = rhs_mat assuming H0 is diagonal.
+def solve_commutator_projection(A, B, tol=1e-15):
+    """Solve [A, X] = B assuming A is diagonal.
 
     For now this assumes that the projection is onto off-diagonal, but we can potentially
     modify this later.
     """
-    rhs_mat = project_off_diagonal(rhs_mat)
+    B = project_off_diagonal(B)
 
     # if rhs_mat is zero after projection, return 0
-    if np.max(np.abs(rhs_mat)) < tol:
-        return np.zeros(H0.shape, dtype=complex)
+    if np.max(np.abs(B)) < tol:
+        return np.zeros(A.shape, dtype=complex)
 
-    return solve_sylvester(H0, -H0, rhs_mat)
+    return solve_sylvester(A, -A, B)
 
 
 def project_off_diagonal(A):
