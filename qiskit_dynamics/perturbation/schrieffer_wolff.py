@@ -53,6 +53,7 @@ def schrieffer_wolff(
     To do:
         - Maybe validate that that everything is hermitian, and add an anti-hermitian projection
         step at the end for the perturbation terms
+        - Should we rename H0 to Hd given the usage of 0 as an index?
     """
 
     ##################################################################################################
