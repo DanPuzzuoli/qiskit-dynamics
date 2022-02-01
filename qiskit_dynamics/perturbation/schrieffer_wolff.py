@@ -131,30 +131,29 @@ def schrieffer_wolff(
     return ArrayPolynomial(array_coefficients=expansion_terms, monomial_multisets=expansion_labels)
 
 
-def solve_commutator_projection(A, B, tol=1e-15):
-    """Solve [A, X] = B assuming A is diagonal.
+def solve_commutator_projection(A: np.ndarray, B: np.ndarray, tol: Optional[float] = 1e-15) -> np.ndarray:
+    """Solve [A, X] = OD(B) assuming A is diagonal, where OD is the projection onto
+    off-diagonal matrices.
 
-    For now this assumes that the projection is onto off-diagonal, but we can potentially
-    modify this later.
+    Args:
+        A: 2d array on the LHS of the equation.
+        B: 2d array on the RHS of the equation.
+        tol: Tolerance for determining if OD(B) is 0.
+
+    Returns:
+        Solution to the above problem.
     """
-    B = project_off_diagonal(B)
 
-    # if rhs_mat is zero after projection, return 0
+    # project B onto off diagonal matrices
+    B = B.copy()
+    k = B.shape[-1]
+    B[range(k), range(k)] = 0.0
+
+    # if B is zero after projection, return 0
     if np.max(np.abs(B)) < tol:
         return np.zeros(A.shape, dtype=complex)
 
     return solve_sylvester(A, -A, B)
-
-
-def project_off_diagonal(A):
-    """Set diagonal elements to 0. Assumes A.ndim >= 2. If A.ndim > 2, treats array as a
-    multidimensional array of matrices, with last two dimensiosn corresponding to the matrices
-    whose diagonal is to be set to 0.
-    """
-    A = A.copy()
-    k = min(A.shape[-2:])
-    A[..., range(k), range(k)] = 0.0
-    return A
 
 
 def commutator(A, B):
