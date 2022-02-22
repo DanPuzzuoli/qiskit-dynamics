@@ -14,13 +14,18 @@
 
 import numpy as np
 
+from scipy.integrate._ivp.ivp import OdeResult
+
 from qiskit import pulse
 from qiskit.pulse.transforms.canonicalization import block_to_schedule
+
+from qiskit.quantum_info.states.quantum_state import QuantumState
+
 
 from qiskit_dynamics.signals.signals import DiscreteSignal
 from qiskit_dynamics.pulse import InstructionToSignals
 from qiskit_dynamics.models import HamiltonianModel
-from qiskit_dynamics.solvers.solver_classes import Solver
+from qiskit_dynamics.solvers.solver_classes import Solver, initial_state_converter
 
 from qiskit_dynamics.array import Array
 
@@ -148,7 +153,7 @@ class PulseSolver:
 
         return hamiltonian_signals, dissipator_signals
 
-    def solve(self, schedules, y0, **kwargs):
+    def solve(self, schedules, y0, wrap_results=True, **kwargs):
         """Output types are an issue for the JAX execution. `Solver.solve`
         will automatically take certain actions based on input type, and will wrap output states in
         the appropriate type, but we will need to unwrap this to be able to jit (which will introduce
@@ -173,7 +178,7 @@ class PulseSolver:
                 self.solver.signals = self.get_signals(sched)
 
                 T = self.dt * sched.duration
-                results.append(self.solver.solve(t_span=[0, T], y0=y0, **kwargs))
+                results.append(self.solver.solve(t_span=[0, T], y0=y0, wrap_results=wrap_results, **kwargs))
 
             return results
         else:
@@ -189,6 +194,13 @@ class PulseSolver:
 
             carrier_freqs = np.array([sig.carrier_freq for sig in converted_schedules[0]])
 
+            # determine output type
+            if isinstance(y0, QuantumState) and isinstance(self.model, LindbladModel):
+                y0 = DensityMatrix(y0)
+
+            y0, y0_cls = initial_state_converter(y0, return_class=True)
+            if y0_cls is not None:
+                y0 = y0_cls(y0)
 
             def sim_function(sample_list, duration):
                 solver_copy = self.solver.copy()
@@ -210,10 +222,12 @@ class PulseSolver:
 
                     solver_copy.signals = (ham_signals, diss_signals)
 
-                return Array(solver_copy.solve(t_span=[0, duration * self.dt],
+                results = solver_copy.solve(t_span=[0, duration * self.dt],
                                                y0=y0,
                                                wrap_results=False,
-                                               **kwargs).y).data
+                                               **kwargs)
+
+                return Array(results.t).data, Array(results.y).data
 
             jit_sim_function = jit(sim_function)
 
@@ -223,10 +237,13 @@ class PulseSolver:
                 sample_list = np.zeros(zero_shape, dtype=complex)
                 for idx, sig in enumerate(signals):
                     sample_list[idx, 0:duration] = np.array(sig.samples)
-                res = jit_sim_function(sample_list, duration)
-                results.append(res)
-                """ Need to rewrap in OdeResult objects here - whatever format is relevant
-                """
+                results_t, results_y = jit_sim_function(sample_list, duration)
+
+                # wrap results if desired
+                if y0_cls is not None and wrap_results:
+                    results_y = [y0_cls(y) for y in results_y]
+
+                results.append(OdeResult(t=results_t, y=Array(results_y, backend="jax", dtype=complex)))
 
 
             return results
