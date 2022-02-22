@@ -12,14 +12,18 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
+from typing import Optional, Union, Tuple, Any, Type, List
+from copy import copy
+
 import numpy as np
 
 from scipy.integrate._ivp.ivp import OdeResult
 
-from qiskit import pulse
+from qiskit import pulse, QiskitError
 from qiskit.pulse.transforms.canonicalization import block_to_schedule
 
 from qiskit.quantum_info.states.quantum_state import QuantumState
+from qiskit.quantum_info import Statevector, DensityMatrix
 
 
 from qiskit_dynamics.signals.signals import DiscreteSignal
@@ -52,7 +56,9 @@ class PulseSolver:
                  evaluation_mode,
                  rwa_cutoff_freq,
                  validate,
-                 backend):
+                 backend,
+                 subsystem_labels: Optional[List[int]] = None,
+                 subsystem_dims: Optional[List[int]] = None):
         """NOTE: for now assuming that hamiltonian_channels and/or dissipator_channels
         have no internal repeats. We can add a step that merges operators with the
         same channel later.
@@ -103,31 +109,42 @@ class PulseSolver:
                                               carriers=carrier_freqs,
                                               channels=self.all_channels)
 
-        @classmethod
-        def from_Solver(cls,
-                        solver,
-                        hamiltonian_channels,
-                        dissipator_channels,
-                        carrier_freqs,
-                        dt,
-                        measurement_dict,
-                        backend):
-            """Construct form an already-existing Solver instance."""
+        ################################################################################################
+        # Add dimension validation
+        # Set labels to default to be the same lenght as dimensions
+        ################################################################################################
+        self.subsystem_labels = subsystem_labels or [0]
+        self.subsystem_dims = subsystem_dims or [self.solver.model.dim]
 
-            return PulseSolver(static_hamiltonian=solver.static_hamiltonian,
-                               hamiltonian_operators=solver.hamiltonian_operators,
-                               hamiltonian_channels=hamiltonian_channels,
-                               static_dissipators=solver.static_dissipators,
-                               dissipator_operators=solver.dissipator_operators,
-                               dissipator_channels=dissipator_channels,
-                               carrier_freqs=carrier_freqs,
-                               dt=dt,
-                               rotating_frame=solver.rotating_frame,
-                               in_frame_basis=solver.in_frame_basis,
-                               evaluation_mode=solver.evaluation_mode,
-                               rwa_cutoff_freq=solver.rwa_cutoff_freq,
-                               validate=False,
-                               backend=backend)
+    @classmethod
+    def from_Solver(cls,
+                    solver,
+                    hamiltonian_channels,
+                    dissipator_channels,
+                    carrier_freqs,
+                    dt,
+                    measurement_dict,
+                    backend,
+                    subsystem_labels: Optional[List[int]] = None,
+                    subsystem_dims: Optional[List[int]] = None):
+        """Construct form an already-existing Solver instance."""
+
+        return PulseSolver(static_hamiltonian=solver.static_hamiltonian,
+                           hamiltonian_operators=solver.hamiltonian_operators,
+                           hamiltonian_channels=hamiltonian_channels,
+                           static_dissipators=solver.static_dissipators,
+                           dissipator_operators=solver.dissipator_operators,
+                           dissipator_channels=dissipator_channels,
+                           carrier_freqs=carrier_freqs,
+                           dt=dt,
+                           rotating_frame=solver.rotating_frame,
+                           in_frame_basis=solver.in_frame_basis,
+                           evaluation_mode=solver.evaluation_mode,
+                           rwa_cutoff_freq=solver.rwa_cutoff_freq,
+                           validate=False,
+                           backend=backend,
+                           subsystem_labels=subsystem_labels,
+                           subsystem_dims=subsystem_dims)
 
     def get_signals(self, schedule):
         """Get the signals from a schedule to pass to the Solver."""
@@ -247,3 +264,44 @@ class PulseSolver:
 
 
             return results
+
+    def measurement_probabilities(self,
+                                  y: Union[np.ndarray, QuantumState],
+                                  subsystems_to_keep: Optional[List[int]] = None) -> np.ndarray:
+        """Compute measurement probabilities.
+
+        For now assumes things ordered in the standard basis.
+
+        subsystems_to_keep indicates which subsystems to include in the output.
+        """
+        # this is a hack to get things into the right dimensions
+        y = np.array(y)
+
+        if y.ndim == 1:
+            y = Statevector(y, dims=self.subsystem_dims)
+        elif y.ndim == 2:
+            y = DensityMatrix(y, dims=self.subsystem_dims)
+        else:
+            raise QiskitError('y is not a valid state.')
+
+        full_probabilities = y.probabilities_dict()
+
+        if subsystems_to_keep is None:
+            return full_probabilities
+
+        if any(label not in self.subsystem_labels for label in subsystems_to_keep):
+            raise QiskitError('label not valid')
+
+        reversed_subsystems = list(reversed(self.subsystem_labels))
+        subsystem_indices = [reversed_subsystems.index(label) for label in subsystems_to_keep]
+
+        # loop through and add up probabilities corresponding to the same state
+        reduced_probabilities = dict()
+        for state_label, prob in full_probabilities.items():
+            reduced_label = ''.join(state_label[idx] for idx in subsystem_indices)
+            if reduced_label in reduced_probabilities:
+                reduced_probabilities[reduced_label] += prob
+            else:
+                reduced_probabilities[reduced_label] = prob
+
+        return reduced_probabilities
