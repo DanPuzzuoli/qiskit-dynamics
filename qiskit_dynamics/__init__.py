@@ -25,6 +25,8 @@ from .version import __version__
 
 from .models.rotating_frame import RotatingFrame
 
+from .pulse.pulse_solver import PulseSolver
+
 from .signals.signals import Signal, DiscreteSignal
 
 from .solvers.solver_functions import solve_ode, solve_lmde

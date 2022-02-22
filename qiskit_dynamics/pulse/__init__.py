@@ -78,3 +78,4 @@ Qiskit Pulse
 """
 
 from .pulse_to_signals import InstructionToSignals
+from .pulse_solver import PulseSolver

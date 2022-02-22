@@ -202,7 +202,7 @@ class Solver:
         return copy(self)
 
     def solve(
-        self, t_span: Array, y0: Union[Array, QuantumState, BaseOperator], **kwargs
+        self, t_span: Array, y0: Union[Array, QuantumState, BaseOperator], wrap_results=True, **kwargs
     ) -> OdeResult:
         r"""Solve the dynamical problem.
 
@@ -214,6 +214,9 @@ class Solver:
         Args:
             t_span: Time interval to integrate over.
             y0: Initial state.
+            wrap_results: If input is a ``QuantumState`` or ``BaseOperator``, whether or not to
+                          wrap the results in the corresponding object. Has no effect if ``y0``
+                          is an array.
             **kwargs: Keyword args passed to :func:`~qiskit_dynamics.solvers.solve_lmde`.
 
         Returns:
@@ -311,7 +314,7 @@ class Solver:
         elif (y0_cls is DensityMatrix) and is_lindblad_model_vectorized(self.model):
             results.y = Array(results.y).reshape((len(results.y),) + y_input.shape, order="F")
 
-        if y0_cls is not None:
+        if y0_cls is not None and wrap_results:
             results.y = [final_state_converter(yi, y0_cls) for yi in results.y]
 
         return results
