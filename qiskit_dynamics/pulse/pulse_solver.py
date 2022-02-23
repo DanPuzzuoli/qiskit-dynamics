@@ -28,7 +28,7 @@ from qiskit.quantum_info import Statevector, DensityMatrix
 
 from qiskit_dynamics.signals.signals import DiscreteSignal
 from qiskit_dynamics.pulse import InstructionToSignals
-from qiskit_dynamics.models import HamiltonianModel
+from qiskit_dynamics.models import HamiltonianModel, RotatingFrame
 from qiskit_dynamics.solvers.solver_classes import Solver, initial_state_converter
 
 from qiskit_dynamics.array import Array
@@ -51,19 +51,22 @@ class PulseSolver:
                  dissipator_channels,
                  carrier_freqs,
                  dt,
-                 rotating_frame,
-                 in_frame_basis,
-                 evaluation_mode,
-                 rwa_cutoff_freq,
-                 validate,
-                 backend,
+                 rotating_frame: Optional[Union[Array, RotatingFrame]] = None,
+                 in_frame_basis: bool = False,
+                 evaluation_mode: str = "dense",
+                 rwa_cutoff_freq: Optional[float] = None,
+                 validate: Optional[bool] = None,
+                 backend: Optional[bool] = None,
                  subsystem_labels: Optional[List[int]] = None,
                  subsystem_dims: Optional[List[int]] = None):
         """NOTE: for now assuming that hamiltonian_channels and/or dissipator_channels
         have no internal repeats. We can add a step that merges operators with the
         same channel later.
 
-        Do we want to allow this to work for constant models?
+        Questions:
+            - Do we want to allow this to work for constant models?
+            - Do we need to determine u-channel frequencies here or should that be
+              part of PulseSimulator?
         """
 
         # first do some validation
@@ -79,6 +82,11 @@ class PulseSolver:
 
         self.backend = backend or Array.default_backend()
 
+        # this is a hack?
+        default_backend = Array.default_backend()
+        if self.backend == 'jax':
+            Array.set_default_backend('jax')
+
         self.solver = Solver(static_hamiltonian=static_hamiltonian,
                              hamiltonian_operators=hamiltonian_operators,
                              static_dissipators=static_dissipators,
@@ -88,6 +96,9 @@ class PulseSolver:
                              evaluation_mode=evaluation_mode,
                              rwa_cutoff_freq=rwa_cutoff_freq,
                              validate=validate)
+
+        # set default backend back
+        Array.set_default_backend(default_backend)
 
         self.hamiltonian_channels = hamiltonian_channels
         self.dissipator_channels = dissipator_channels
@@ -193,7 +204,7 @@ class PulseSolver:
         elif isinstance(sample_span, Iterable):
             sample_span = list(sample_span)
             if isinstance(sample_span[0], int):
-                sample_span = sample_span * len(schedules)
+                sample_span = [sample_span] * len(schedules)
             elif len(sample_span) != len(schedules):
                 raise QiskitError('if specifying a list of sample_span windows, must be same length as schedules')
 
@@ -226,6 +237,10 @@ class PulseSolver:
             y0, y0_cls = initial_state_converter(y0, return_class=True)
             if y0_cls is not None:
                 y0 = y0_cls(y0)
+
+            # need things to work with JAX here
+            default_backend = Array.default_backend()
+            Array.set_default_backend('jax')
 
             def sim_function(sample_list, t0, tf):
                 solver_copy = self.solver.copy()
@@ -270,6 +285,8 @@ class PulseSolver:
 
                 results.append(OdeResult(t=results_t, y=Array(results_y, backend="jax", dtype=complex)))
 
+            # set default backend back
+            Array.set_default_backend(default_backend)
 
             return results
 
