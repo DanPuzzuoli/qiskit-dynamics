@@ -12,7 +12,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-from typing import Optional, Union, Tuple, Any, Type, List
+from typing import Optional, Union, Tuple, Any, Type, List, Iterable
 from copy import copy
 
 import numpy as np
@@ -170,43 +170,51 @@ class PulseSolver:
 
         return hamiltonian_signals, dissipator_signals
 
-    def solve(self, schedules, y0, wrap_results=True, **kwargs):
+    def solve(self, schedules, y0, sample_span=None, wrap_results=True, **kwargs):
         """Output types are an issue for the JAX execution. `Solver.solve`
         will automatically take certain actions based on input type, and will wrap output states in
         the appropriate type, but we will need to unwrap this to be able to jit (which will introduce
         multiple pointless loops in which the outputs are wrapped, unwrapped, and then re-wrapped again).
-        """
-        if not isinstance(schedules, list):
-            schedules = [schedules]
 
-        new_schedules = []
-        for sched in schedules:
-            if isinstance(sched, pulse.ScheduleBlock):
-                new_schedules.append(block_to_schedule(sched))
-            elif isinstance(sched, pulse.Schedule):
-                new_schedules.append(sched)
-            else:
-                raise Exception('invalid Schedule type')
-        schedules = new_schedules
+        sample_span simulation time window behaviour:
+            - If None defaults to simulating for the length of each schedule according to
+              when the last pulse shape ends
+            - If a single [t0, tf] pair, all schedules simulated over that interval
+            - If a list of pairs [t0, tf], must be the same length as the schedules, and
+              each schedule is simulated according to that pair
+            - Note: specified as samples
+        """
+
+        schedules = to_schedule_list(schedules)
+
+        # handle different sample_span arguments
+        if sample_span is None:
+            sample_span = [[0, sched.duration] for sched in schedules]
+        elif isinstance(sample_span, Iterable):
+            sample_span = list(sample_span)
+            if isinstance(sample_span[0], int):
+                sample_span = sample_span * len(schedules)
+            elif len(sample_span) != len(schedules):
+                raise QiskitError('if specifying a list of sample_span windows, must be same length as schedules')
+
         if self.backend != 'jax':
             results = []
-            for sched in schedules:
+            for sched, sim_range in zip(schedules, sample_span):
 
                 self.solver.signals = self.get_signals(sched)
 
-                T = self.dt * sched.duration
-                results.append(self.solver.solve(t_span=[0, T], y0=y0, wrap_results=wrap_results, **kwargs))
+                t0 = self.dt * sim_range[0]
+                tf = self.dt * sim_range[1]
+                results.append(self.solver.solve(t_span=[t0, tf], y0=y0, wrap_results=wrap_results, **kwargs))
 
             return results
         else:
 
             converted_schedules = []
-            durations = []
             max_duration = 0
 
             for sched in schedules:
                 converted_schedules.append(self.get_signals(sched))
-                durations.append(sched.duration)
                 max_duration = max(max_duration, sched.duration)
 
             carrier_freqs = np.array([sig.carrier_freq for sig in converted_schedules[0]])
@@ -219,7 +227,7 @@ class PulseSolver:
             if y0_cls is not None:
                 y0 = y0_cls(y0)
 
-            def sim_function(sample_list, duration):
+            def sim_function(sample_list, t0, tf):
                 solver_copy = self.solver.copy()
 
                 signals = [DiscreteSignal(dt=self.dt,
@@ -239,7 +247,7 @@ class PulseSolver:
 
                     solver_copy.signals = (ham_signals, diss_signals)
 
-                results = solver_copy.solve(t_span=[0, duration * self.dt],
+                results = solver_copy.solve(t_span=[t0, tf],
                                                y0=y0,
                                                wrap_results=False,
                                                **kwargs)
@@ -250,11 +258,11 @@ class PulseSolver:
 
             results = []
             zero_shape = (len(converted_schedules[0]), max_duration)
-            for duration, signals in zip(durations, converted_schedules):
+            for sim_range, signals in zip(sample_span, converted_schedules):
                 sample_list = np.zeros(zero_shape, dtype=complex)
                 for idx, sig in enumerate(signals):
-                    sample_list[idx, 0:duration] = np.array(sig.samples)
-                results_t, results_y = jit_sim_function(sample_list, duration)
+                    sample_list[idx, 0:len(sig.samples)] = np.array(sig.samples)
+                results_t, results_y = jit_sim_function(sample_list, sim_range[0] * self.dt, sim_range[1] * self.dt)
 
                 # wrap results if desired
                 if y0_cls is not None and wrap_results:
@@ -305,3 +313,68 @@ class PulseSolver:
                 reduced_probabilities[reduced_label] = prob
 
         return reduced_probabilities
+
+    def run(self, schedules, y0, **kwargs):
+        """Meant to mimic backend.run, includes measurement."""
+
+        ################################################################################################
+        # validate y0
+        ################################################################################################
+        schedules = to_schedule_list(schedules)
+
+        # get the acquires instructions
+        sim_spans = []
+        measurement_subsystems = []
+        for schedule in schedules:
+            schedule_acquires = []
+            schedule_acquire_times = []
+            for start_time, inst in schedule.instructions:
+                if isinstance(inst, pulse.Acquire):
+                    schedule_acquires.append(inst)
+                    schedule_acquire_times.append(start_time)
+
+            # maybe need to validate more here
+            validate_acquires(schedule_acquire_times, schedule_acquires)
+
+            sim_spans.append([0, schedule_acquire_times[0]])
+            measurement_subsystems.append([inst.channel.index for inst in schedule_acquires])
+            measurement_subsystems[-1].sort()
+
+            ############################################################################################
+            # handle mem/reg slots here?
+            ############################################################################################
+
+        results = self.solve(schedules, y0, sample_span=sim_spans, **kwargs)
+
+        for result, meas_subsystems in zip(results, measurement_subsystems):
+            result.measurement_probabilities = self.measurement_probabilities(result.y[-1], subsystems_to_keep=meas_subsystems)
+
+        return results
+
+
+
+def to_schedule_list(schedules):
+    if not isinstance(schedules, list):
+        schedules = [schedules]
+
+    new_schedules = []
+    for sched in schedules:
+        if isinstance(sched, pulse.ScheduleBlock):
+            new_schedules.append(block_to_schedule(sched))
+        elif isinstance(sched, pulse.Schedule):
+            new_schedules.append(sched)
+        else:
+            raise Exception('invalid Schedule type')
+    return new_schedules
+
+
+def validate_acquires(schedule_acquire_times, schedule_acquires):
+    """Validate the acquire instructions.
+
+    For now, make sure all acquires happen at oen time.
+    """
+
+    start_time = schedule_acquire_times[0]
+    for time in schedule_acquire_times[1:]:
+        if time != start_time:
+            raise QiskitError("PulseSolver.run only supports measurements at one time.")
