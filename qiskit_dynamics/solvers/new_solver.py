@@ -205,11 +205,19 @@ class NewSolver:
 
                     signals.append((hamiltonian_signals, dissipator_signals))
 
+            """Setup simulation times - below is just a quick solution for demo,
+            but need to validate that only one of dt_span and t_span is specified
+
+            May also want to validate that dt_span is only being used when schedules
+            are being simulated, as it may be a bit annoying to validate this as well.
+            """
+
             if dt_span is None:
                 dt_span = [[0, sched.duration] for sched in schedules]
 
-            # assume dt specified, can support both modes of operation
-            t_span = Array(dt_span) * self.dt
+            if t_span is None:
+                # assume dt specified, can support both modes of operation
+                t_span = Array(dt_span) * self.dt
 
         return self._solve_signals(signals, t_span, y0, wrap_results=wrap_results, **kwargs)
 
