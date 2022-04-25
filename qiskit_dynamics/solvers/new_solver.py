@@ -26,7 +26,9 @@ import numpy as np
 # pylint: disable=unused-import
 from scipy.integrate._ivp.ivp import OdeResult
 
-from qiskit import QiskitError
+from qiskit import pulse, QiskitError
+from qiskit.pulse import Schedule, ScheduleBlock
+from qiskit.pulse.transforms.canonicalization import block_to_schedule
 
 from qiskit.circuit import Gate, QuantumCircuit
 from qiskit.quantum_info.operators.base_operator import BaseOperator
@@ -43,6 +45,7 @@ from qiskit_dynamics.models import (
 )
 from qiskit_dynamics.signals import Signal, SignalList
 from qiskit_dynamics.array import Array
+from qiskit_dynamics.pulse import InstructionToSignals
 
 from .solver_functions import solve_lmde
 from .solver_utils import is_lindblad_model_vectorized, is_lindblad_model_not_vectorized
@@ -57,6 +60,10 @@ class NewSolver:
         static_dissipators: Optional[Array] = None,
         dissipator_operators: Optional[Array] = None,
         rotating_frame: Optional[Union[Array, RotatingFrame]] = None,
+        hamiltonian_channels=None,
+        dissipator_channels=None,
+        carrier_freqs=None,
+        dt=None,
         in_frame_basis: bool = False,
         evaluation_mode: str = "dense",
         rwa_cutoff_freq: Optional[float] = None,
@@ -69,6 +76,7 @@ class NewSolver:
             - Need to re-add w/deprecation warning
             - Problem: rwa_cutoff_freq requires signal frequencies to function, need to somehow
               add this back
+        - Make sure simulating no signals or empty schedule works
 
         Args:
             static_hamiltonian: Constant Hamiltonian term. If a ``rotating_frame``
@@ -125,6 +133,34 @@ class NewSolver:
         """
         self._model = model
 
+
+        """
+        Pulse stuff. Will probably need a bunch of validation
+        """
+        self.hamiltonian_channels = hamiltonian_channels
+        self.dissipator_channels = dissipator_channels
+        self.carrier_freqs = carrier_freqs
+
+        self.all_channels = []
+        if self.hamiltonian_channels is not None:
+            for chan in self.hamiltonian_channels:
+                if chan not in self.all_channels:
+                    self.all_channels.append(chan)
+        if self.dissipator_channels is not None:
+            for chan in self.dissipator_channels:
+                if chan not in self.all_channels:
+                    self.all_channels.append(chan)
+
+        self.all_channels.sort()
+        self.dt = dt
+
+        # need to be careful with this
+        self.converter = None
+        if dt is not None and carrier_freqs is not None and len(self.all_channels) > 0:
+            self.converter = InstructionToSignals(dt=dt,
+                                                  carriers=carrier_freqs,
+                                                  channels=self.all_channels)
+
     @property
     def model(self) -> Union[HamiltonianModel, LindbladModel]:
         """The model of the system, either a Hamiltonian or Lindblad model."""
@@ -135,7 +171,55 @@ class NewSolver:
         return copy(self)
 
     def solve(
-        self, signals, t_span: Array, y0: Union[Array, QuantumState, BaseOperator], wrap_results=True, **kwargs
+        self,
+        signals,
+        t_span: Optional[Array] = None,
+        y0: Optional[Union[Array, QuantumState, BaseOperator]] = None,
+        dt_span: Optional[Array] = None,
+        wrap_results=True,
+        **kwargs
+    ) -> OdeResult:
+        r"""Solve the dynamical problem."""
+
+        # need tons o' validation
+
+        # determine whether to pass to
+        if isinstance(signals, (Schedule, ScheduleBlock)) or (isinstance(signals, list) and isinstance(signals[0], (Schedule, ScheduleBlock))):
+            schedules = to_schedule_list(signals)
+
+            # assume converter defined here
+            signals = []
+            for schedule in schedules:
+                sched_signals = self.converter.get_signals(schedule)
+
+                if isinstance(self.model, HamiltonianModel):
+                    signals.append([sched_signals[self.all_channels.index(chan)] for chan in self.hamiltonian_channels])
+                else:
+                    hamiltonian_signals = None
+                    dissipator_signals = None
+
+                    if self.hamiltonian_channels is not None:
+                        hamiltonian_signals = [sched_signals[self.all_channels.index(chan)] for chan in self.hamiltonian_channels]
+                    if self.dissipator_channels is not None:
+                        dissipator_signals = [sched_signals[self.all_channels.index(chan)] for chan in self.dissipator_channels]
+
+                    signals.append((hamiltonian_signals, dissipator_signals))
+
+            if dt_span is None:
+                dt_span = [[0, sched.duration] for sched in schedules]
+
+            # assume dt specified, can support both modes of operation
+            t_span = Array(dt_span) * self.dt
+
+        return self._solve_signals(signals, t_span, y0, wrap_results=wrap_results, **kwargs)
+
+    def _solve_signals(
+        self,
+        signals,
+        t_span: Optional[Array] = None,
+        y0: Optional[Union[Array, QuantumState, BaseOperator]] = None,
+        wrap_results=True,
+        **kwargs
     ) -> OdeResult:
         r"""Solve the dynamical problem."""
 
@@ -225,8 +309,6 @@ class NewSolver:
         else:
             t_span = [t_span] * max(num_signal_sets, 1)
 
-
-
         all_results = []
         for _signals, _t_span in zip(signals, t_span):
 
@@ -257,6 +339,7 @@ class NewSolver:
 
             all_results.append(results)
 
+        # revert to empty model
         self.model.signals = None
 
         # strip the list wrapping
@@ -314,3 +397,17 @@ def final_state_converter(obj: Any, cls: Optional[Type] = None) -> Any:
         return obj
 
     return cls(np.array(obj))
+
+def to_schedule_list(schedules):
+    if not isinstance(schedules, list):
+        schedules = [schedules]
+
+    new_schedules = []
+    for sched in schedules:
+        if isinstance(sched, pulse.ScheduleBlock):
+            new_schedules.append(block_to_schedule(sched))
+        elif isinstance(sched, pulse.Schedule):
+            new_schedules.append(sched)
+        else:
+            raise Exception('invalid Schedule type')
+    return new_schedules
