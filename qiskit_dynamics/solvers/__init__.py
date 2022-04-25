@@ -75,3 +75,4 @@ Solver functions
 
 from .solver_functions import solve_ode, solve_lmde
 from .solver_classes import Solver
+from .new_solver import NewSolver
