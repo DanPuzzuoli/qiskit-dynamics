@@ -62,7 +62,7 @@ class NewSolver:
         rotating_frame: Optional[Union[Array, RotatingFrame]] = None,
         hamiltonian_channels=None,
         dissipator_channels=None,
-        carrier_freqs=None,
+        channel_carrier_freqs=None,
         dt=None,
         in_frame_basis: bool = False,
         evaluation_mode: str = "dense",
@@ -139,7 +139,7 @@ class NewSolver:
         """
         self.hamiltonian_channels = hamiltonian_channels
         self.dissipator_channels = dissipator_channels
-        self.carrier_freqs = carrier_freqs
+        self.channel_carrier_freqs = channel_carrier_freqs
 
         self.all_channels = []
         if self.hamiltonian_channels is not None:
@@ -156,9 +156,9 @@ class NewSolver:
 
         # need to be careful with this
         self.converter = None
-        if dt is not None and carrier_freqs is not None and len(self.all_channels) > 0:
+        if dt is not None and channel_carrier_freqs is not None and len(self.all_channels) > 0:
             self.converter = InstructionToSignals(dt=dt,
-                                                  carriers=carrier_freqs,
+                                                  carriers=channel_carrier_freqs,
                                                   channels=self.all_channels)
 
     @property
