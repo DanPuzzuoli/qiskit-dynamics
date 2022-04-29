@@ -177,6 +177,7 @@ class NewSolver:
         y0: Optional[Union[Array, QuantumState, BaseOperator]] = None,
         dt_span: Optional[Array] = None,
         wrap_results=True,
+        control_flow=None,
         **kwargs
     ) -> OdeResult:
         r"""Solve the dynamical problem."""
@@ -219,7 +220,14 @@ class NewSolver:
                 # assume dt specified, can support both modes of operation
                 t_span = Array(dt_span) * self.dt
 
-        return self._solve_signals(signals, t_span, y0, wrap_results=wrap_results, **kwargs)
+        return self._solve_signals(
+            signals,
+            t_span,
+            y0,
+            wrap_results=wrap_results,
+            control_flow=control_flow,
+            **kwargs
+        )
 
     def _solve_signals(
         self,
@@ -227,6 +235,7 @@ class NewSolver:
         t_span: Optional[Array] = None,
         y0: Optional[Union[Array, QuantumState, BaseOperator]] = None,
         wrap_results=True,
+        control_flow=None,
         **kwargs
     ) -> OdeResult:
         r"""Solve the dynamical problem."""
@@ -317,35 +326,75 @@ class NewSolver:
         else:
             t_span = [t_span] * max(num_signal_sets, 1)
 
-        all_results = []
-        for _signals, _t_span in zip(signals, t_span):
+        if control_flow == 'jax':
+            import jax.numpy as jnp
+            from jax.lax import switch, scan
 
-            # need to add rwa handling
-            self.model.signals = _signals
+            # for now assume Hamiltonian, can handle linblad properly later
+            hamiltonian_signal_lists = [SignalList(sigs) for sigs in signals]
 
-            results = solve_lmde(generator=self.model, t_span=_t_span, y0=y0, **kwargs)
+            def get_sig_func(sig):
+                return lambda t: Array(sig(t)).data
 
-            # handle special cases
-            if y0_cls is DensityMatrix and isinstance(self.model, HamiltonianModel):
-                # conjugate by unitary
-                out = Array(results.y)
-                results.y = out @ y_input @ out.conj().transpose((0, 2, 1))
-            elif y0_cls is SuperOp and isinstance(self.model, HamiltonianModel):
-                # convert to SuperOp and compose
-                out = Array(results.y)
-                results.y = (
-                    np.einsum("nka,nlb->nklab", out.conj(), out).reshape(
-                        out.shape[0], out.shape[1] ** 2, out.shape[1] ** 2
+            hamiltonian_signal_eval_funcs = [get_sig_func(sig) for sig in hamiltonian_signal_lists]
+            sig_len = len(hamiltonian_signal_lists[0])
+
+
+            def eval_signals(idx, t):
+                return switch(idx, hamiltonian_signal_eval_funcs, t)
+
+            def sim_func(idx, interval):
+
+                # assumes hamiltonian
+                signals = VectorSignal(lambda t: eval_signals(idx, t), length=sig_len)
+                self.model.signals = signals
+
+                results = solve_lmde(generator=self.model, t_span=interval, y0=y0, **kwargs)
+
+                # for now ignore the extra frame processing processing
+                return Array(results.t).data, Array(results.y).data
+
+            def scan_func(carry, x):
+                idx, interval = x
+                return None, sim_func(idx, interval)
+
+            return scan(scan_func, init=None, xs=(jnp.arange(len(hamiltonian_signal_lists)), Array(t_span).data))[1]
+
+
+
+
+
+        else:
+
+            all_results = []
+            for _signals, _t_span in zip(signals, t_span):
+
+                # need to add rwa handling
+                self.model.signals = _signals
+
+                results = solve_lmde(generator=self.model, t_span=_t_span, y0=y0, **kwargs)
+
+                # handle special cases
+                if y0_cls is DensityMatrix and isinstance(self.model, HamiltonianModel):
+                    # conjugate by unitary
+                    out = Array(results.y)
+                    results.y = out @ y_input @ out.conj().transpose((0, 2, 1))
+                elif y0_cls is SuperOp and isinstance(self.model, HamiltonianModel):
+                    # convert to SuperOp and compose
+                    out = Array(results.y)
+                    results.y = (
+                        np.einsum("nka,nlb->nklab", out.conj(), out).reshape(
+                            out.shape[0], out.shape[1] ** 2, out.shape[1] ** 2
+                        )
+                        @ y_input
                     )
-                    @ y_input
-                )
-            elif (y0_cls is DensityMatrix) and is_lindblad_model_vectorized(self.model):
-                results.y = Array(results.y).reshape((len(results.y),) + y_input.shape, order="F")
+                elif (y0_cls is DensityMatrix) and is_lindblad_model_vectorized(self.model):
+                    results.y = Array(results.y).reshape((len(results.y),) + y_input.shape, order="F")
 
-            if y0_cls is not None and wrap_results:
-                results.y = [final_state_converter(yi, y0_cls) for yi in results.y]
+                if y0_cls is not None and wrap_results:
+                    results.y = [final_state_converter(yi, y0_cls) for yi in results.y]
 
-            all_results.append(results)
+                all_results.append(results)
 
         # revert to empty model
         self.model.signals = None
@@ -419,3 +468,17 @@ def to_schedule_list(schedules):
         else:
             raise Exception('invalid Schedule type')
     return new_schedules
+
+
+class VectorSignal(SignalList):
+    """Used to define a signal list directly."""
+
+    def __init__(self, f, length):
+        self._f = f
+        self._len = length
+
+    def __len__(self):
+        return self._len
+
+    def __call__(self, t):
+        return self._f(t)
