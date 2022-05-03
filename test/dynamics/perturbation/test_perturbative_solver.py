@@ -191,25 +191,33 @@ class TestPerturbativeSolver(QiskitDynamicsTestCase):
             rtol=1e-10,
         )
 
-    def test_simple_dyson_solver(self):
+    def test_simple_dyson_solver(self, parallel=False):
         """Test dyson solver on a simple qubit model."""
 
         dyson_yf = self.simple_dyson_solver.solve(
-            signals=[self.gauss_signal], y0=np.eye(2, dtype=complex), t0=0.0, n_steps=self.n_steps
+            signals=[self.gauss_signal],
+            y0=np.eye(2, dtype=complex),
+            t0=0.0,
+            n_steps=self.n_steps,
+            parallel=parallel,
         )
 
         self.assertAllClose(dyson_yf, self.simple_yf, rtol=1e-6, atol=1e-6)
 
-    def test_simple_magnus_solver(self):
+    def test_simple_magnus_solver(self, parallel=False):
         """Test magnus solver on a simple qubit model."""
 
         magnus_yf = self.simple_magnus_solver.solve(
-            signals=[self.gauss_signal], y0=np.eye(2, dtype=complex), t0=0.0, n_steps=self.n_steps
+            signals=[self.gauss_signal],
+            y0=np.eye(2, dtype=complex),
+            t0=0.0,
+            n_steps=self.n_steps,
+            parallel=parallel,
         )
 
         self.assertAllClose(magnus_yf, self.simple_yf, rtol=1e-6, atol=1e-6)
 
-    def test_dyson_solver_2q(self):
+    def test_dyson_solver_2q(self, parallel=False):
         """Test dyson solver on a two transmon model."""
 
         dyson_yf = self.dyson_solver_2q.solve(
@@ -217,6 +225,7 @@ class TestPerturbativeSolver(QiskitDynamicsTestCase):
             y0=np.eye(self.dim_2q**2, dtype=complex),
             t0=0.0,
             n_steps=self.n_steps_2q,
+            parallel=parallel,
         )
         # measure similarity with fidelity
         self.assertTrue(
@@ -224,7 +233,7 @@ class TestPerturbativeSolver(QiskitDynamicsTestCase):
             < 1e-6
         )
 
-    def test_magnus_solver_2q(self):
+    def test_magnus_solver_2q(self, parallel=False):
         """Test magnus solver on a two transmon model."""
 
         magnus_yf = self.magnus_solver_2q.solve(
@@ -232,6 +241,7 @@ class TestPerturbativeSolver(QiskitDynamicsTestCase):
             y0=np.eye(self.dim_2q**2, dtype=complex),
             t0=0.0,
             n_steps=self.n_steps_2q,
+            parallel=parallel,
         )
         # measure similarity with fidelity
         self.assertTrue(
@@ -249,6 +259,22 @@ class TestPerturbativeSolverJAX(TestJaxBase, TestPerturbativeSolver):
         super().setUpClass()
         # builds common objects
         TestPerturbativeSolver.build_testing_objects(cls, integration_method="jax_odeint")
+
+    def test_simple_dyson_solver_parallel(self):
+        """Test dyson solver on a simple qubit model with parallel evaluation."""
+        self.test_simple_dyson_solver(parallel=True)
+
+    def test_simple_magnus_solver_parallel(self):
+        """Test magnus solver on a simple qubit model."""
+        self.test_simple_magnus_solver(parallel=True)
+
+    def test_dyson_solver_2q_parallel(self):
+        """Test dyson solver on a two transmon model."""
+        self.test_dyson_solver_2q(parallel=True)
+
+    def test_magnus_solver_2q_parallel(self):
+        """Test magnus solver on a two transmon model."""
+        self.test_magnus_solver_2q(parallel=True)
 
     def test_simple_dyson_solve_grad_jit(self):
         """Test jitting and gradding of dyson solve."""

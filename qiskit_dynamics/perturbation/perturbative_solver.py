@@ -242,7 +242,14 @@ class PerturbativeSolver:
         """
         return self._signal_approximation(signals, t0, n_steps)
 
-    def solve(self, signals: List[Signal], y0: np.ndarray, t0: float, n_steps: int) -> np.ndarray:
+    def solve(
+        self,
+        signals: List[Signal],
+        y0: np.ndarray,
+        t0: float,
+        n_steps: int,
+        parallel: Optional[bool] = False,
+    ) -> np.ndarray:
         """Solve for a list of signals, initial state, initial time, and number of steps.
 
         Args:
@@ -250,9 +257,14 @@ class PerturbativeSolver:
             y0: Initial state at time t0.
             t0: Initial time.
             n_steps: Number of time steps to solve for.
+            parallel: Whether to use parallelization in the solver. Parallelization only available
+                      if Array.default_backend() == 'jax'.
 
         Returns:
             np.ndarray: State after n_steps.
+
+        Raises:
+            QiskitError: if parallel=True chosen in non-JAX mode.
         """
         if Array.default_backend() == "jax":
 
@@ -282,12 +294,27 @@ class PerturbativeSolver:
 
             y = U0 @ y0
 
-            step_propagators = vmap(single_step)(jnp.flip(sig_cheb_coeffs.transpose(), axis=0))
-            y = associative_scan(jnp.matmul, step_propagators, axis=0)[-1] @ y
+            if parallel:
+                step_propagators = vmap(single_step)(jnp.flip(sig_cheb_coeffs.transpose(), axis=0))
+                y = associative_scan(jnp.matmul, step_propagators, axis=0)[-1] @ y
 
-            return Uf @ y
+                return Uf @ y
+            else:
+
+                def scan_func(carry, x):
+                    coeffs = x
+                    y_current = carry
+                    return single_step(coeffs) @ y_current, None
+
+                return Uf @ scan(scan_func, init=y, xs=sig_cheb_coeffs.transpose())[0]
 
         else:
+
+            if parallel:
+                raise QiskitError(
+                    "Parallel evaluation only available if Array.default_backend() == 'jax'."
+                )
+
             # setup single step function
             single_step = None
             if "dyson" in self.expansion_method:
