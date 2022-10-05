@@ -16,7 +16,6 @@ Tests for solver classes module.
 """
 
 import numpy as np
-from scipy.linalg import expm
 from ddt import ddt, data, unpack
 
 from qiskit import pulse, QiskitError
@@ -29,80 +28,6 @@ from qiskit_dynamics.type_utils import to_array
 from qiskit_dynamics.solvers.solver_classes import organize_signals_to_channels
 
 from ..common import QiskitDynamicsTestCase, TestJaxBase
-
-
-class TestSolverDeprecations(QiskitDynamicsTestCase):
-    """Test deprecation warnings and deprecated behaviour."""
-
-    def setUp(self):
-        self.X = Operator.from_label("X")
-
-    def test_deprecated_signals_at_construction(self):
-        """Test deprecation warning raised when signals passed to constructor."""
-
-        with self.assertWarnsRegex(DeprecationWarning, "deprecated arguments"):
-            Solver(hamiltonian_operators=[self.X], hamiltonian_signals=[1.0])
-
-        with self.assertWarnsRegex(DeprecationWarning, "deprecated arguments"):
-            Solver(dissipator_operators=[self.X], dissipator_signals=[1.0])
-
-    def test_deprecated_signals_property(self):
-        """Test deprecation warning raised when setting or getting signals property."""
-
-        solver = Solver(hamiltonian_operators=[self.X])
-
-        with self.assertWarnsRegex(DeprecationWarning, "signals property is deprecated"):
-            solver.signals = [1.0]
-
-        with self.assertWarnsRegex(DeprecationWarning, "signals property is deprecated"):
-            solver.signals  # pylint: disable=pointless-statement
-
-    def test_copy_deprecated(self):
-        """Test copy method raises deprecation warning."""
-
-        solver = Solver(hamiltonian_operators=[self.X])
-
-        with self.assertWarnsRegex(DeprecationWarning, "copy method is deprecated"):
-            solver.copy()
-
-    def test_no_signals_to_solve(self):
-        """Test raising of deprecation warning if no signals passed to solve,
-        and signals present in model.
-        """
-
-        with self.assertWarnsRegex(DeprecationWarning, "deprecated arguments"):
-            solver = Solver(hamiltonian_operators=[self.X], hamiltonian_signals=[1.0])
-
-        with self.assertWarnsRegex(DeprecationWarning, "No signals specified to solve"):
-            solver.solve(t_span=[0.0, 0.1], y0=np.array([0.0, 1.0]))
-
-        with self.assertWarnsRegex(DeprecationWarning, "deprecated arguments"):
-            solver = Solver(
-                hamiltonian_operators=[self.X],
-                hamiltonian_signals=[1.0],
-                dissipator_operators=[self.X],
-                dissipator_signals=[1.0],
-            )
-
-        with self.assertWarnsRegex(DeprecationWarning, "No signals specified to solve"):
-            solver.solve(t_span=[0.0, 0.1], y0=np.array([[0.0, 0.0], [0.0, 1.0]]))
-
-    def test_replacing_signals_in_solve(self):
-        """Test that the signals stored in the signals attribute are correctly replaced."""
-
-        with self.assertWarnsRegex(DeprecationWarning, "deprecated arguments"):
-            solver = Solver(
-                hamiltonian_operators=[self.X],
-                hamiltonian_signals=[1.0],
-            )
-
-        y0 = np.array([1.0, 0.0])
-        results = solver.solve(t_span=[0.0, 0.1], y0=y0, signals=[2.0], atol=1e-10, rtol=1e-10)
-        expected = expm(-1j * 0.1 * 2 * self.X.data) @ y0
-        self.assertAllClose(results.y[-1], expected)
-
-        with self.assertWarnsRegex(DeprecationWarning, "signals property is deprecated"):
-            self.assertTrue(solver.signals[0] == 1.0)
 
 
 class TestSolverValidation(QiskitDynamicsTestCase):
@@ -495,6 +420,21 @@ class TestSolverSignalHandling(QiskitDynamicsTestCase):
         res2 = solve_lmde(generator=rwa_td_lindblad_model, t_span=t_span, y0=y0)
 
         self.assertAllClose(res1.y, res2.y)
+
+    def test_signals_are_None(self):
+        """Test the model signals return to being None after simulation."""
+
+        ham_solver = Solver(hamiltonian_operators=[self.X])
+        ham_solver.solve(signals=[1.0], t_span=[0.0, 0.01], y0=np.array([0.0, 1.0]))
+        self.assertTrue(ham_solver.model.signals is None)
+
+        lindblad_solver = Solver(hamiltonian_operators=[self.X], static_dissipators=[self.X])
+        lindblad_solver.solve(signals=[1.0], t_span=[0.0, 0.01], y0=np.eye(2))
+        self.assertTrue(lindblad_solver.model.signals == (None, None))
+
+        td_lindblad_solver = Solver(hamiltonian_operators=[self.X], dissipator_operators=[self.X])
+        td_lindblad_solver.solve(signals=([1.0], [1.0]), t_span=[0.0, 0.01], y0=np.eye(2))
+        self.assertTrue(td_lindblad_solver.model.signals == (None, None))
 
 
 class TestSolverSimulation(QiskitDynamicsTestCase):
@@ -997,7 +937,7 @@ class TestPulseSimulation(QiskitDynamicsTestCase):
             y0=SuperOp(np.eye(4, dtype=complex)),
             schedules=sched,
             signals=signals,
-            test_tol=1e-9,
+            test_tol=1e-8,
             atol=1e-12,
             rtol=1e-12,
         )
@@ -1197,6 +1137,30 @@ class TestPulseSimulation(QiskitDynamicsTestCase):
             rtol=1e-12,
         )
 
+    def test_channel_without_instructions(self):
+        """Test pulse simulation with a channel in the model having no instructions."""
+
+        # construct schedule
+        with pulse.build() as sched:
+            with pulse.align_sequential():
+                pulse.play(pulse.Constant(duration=5, amp=0.9), pulse.DriveChannel(0))
+
+        # construct equivalent DiscreteSignal manually
+        sig0 = DiscreteSignal(dt=0.1, samples=np.ones(5, dtype=float) * 0.9, carrier_freq=5.0)
+        sig1 = DiscreteSignal(dt=0.1, samples=[], carrier_freq=3.1)
+        signals = [sig0, sig1]
+
+        self._compare_schedule_to_signals(
+            solver=self.ham_solver_2_channels,
+            t_span=[0.0, 0.5],
+            y0=np.eye(2),
+            schedules=sched,
+            signals=signals,
+            test_tol=1e-8,
+            atol=1e-12,
+            rtol=1e-12,
+        )
+
     def _compare_schedule_to_signals(
         self, solver, t_span, y0, schedules, signals, test_tol=1e-14, **kwargs
     ):
@@ -1241,6 +1205,63 @@ class TestPulseSimulationJAX(TestPulseSimulation, TestJaxBase):
     def setUp(self):
         super().setUp()
         self.method = "jax_odeint"
+
+    def test_t_eval_t_span_jax_odeint(self):
+        """Test internal jitting works when specifying t_eval and t_span. This catches a bug
+        that was missed on initial implementation. This test just checks that it runs,
+        with the correctness assumed to be verified elsewhere.
+        """
+
+        with pulse.build() as sched:
+            pulse.play(pulse.Constant(duration=5, amp=0.9), pulse.DriveChannel(0))
+
+        self.ham_solver.solve(
+            signals=sched,
+            t_span=[0.0, 0.1],
+            y0=np.array([0.0, 1.0]),
+            t_eval=[0.0, 0.05, 0.1],
+            method="jax_odeint",
+        )
+
+    def test_t_eval_t_span_diffrax(self):
+        """Test internal jitting works when specifying t_eval and t_span for diffrax.
+        This catches a bug that was missed on initial implementation. This test just checks
+        that it runs, with the correctness assumed to be verified elsewhere.
+        """
+
+        from diffrax import Dopri5, PIDController
+
+        with pulse.build() as sched:
+            pulse.play(pulse.Constant(duration=5, amp=0.9), pulse.DriveChannel(0))
+
+        self.ham_solver.solve(
+            signals=sched,
+            t_span=[0.0, 0.1],
+            y0=np.array([0.0, 1.0]),
+            t_eval=[0.0, 0.05, 0.1],
+            method=Dopri5(),
+            stepsize_controller=PIDController(rtol=1e-10, atol=1e-10),
+            max_steps=1000000,
+        )
+
+    def test_t_eval_t_span_jax_expm(self):
+        """Test internal jitting works when specifying t_eval and t_span for jax_expm,
+        which serves as a place-holder for internally developed fixed-step solvers.
+        This catches a bug that was missed on initial implementation. This test just checks
+        that it runs, with the correctness assumed to be verified elsewhere.
+        """
+
+        with pulse.build() as sched:
+            pulse.play(pulse.Constant(duration=5, amp=0.9), pulse.DriveChannel(0))
+
+        self.ham_solver.solve(
+            signals=sched,
+            t_span=[0.0, 0.1],
+            y0=np.array([0.0, 1.0]),
+            t_eval=[0.0, 0.05, 0.1],
+            method="jax_expm",
+            max_dt=0.05,
+        )
 
 
 @ddt
