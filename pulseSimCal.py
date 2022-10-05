@@ -1,15 +1,10 @@
 #%%
-import pandas as pd
 import numpy as np
 
 import qiskit.pulse as pulse
-from qiskit.circuit import Parameter
 
-from qiskit_experiments.calibration_management.calibrations import Calibrations
-import qiskit_dynamics.pulse.pulseSimClass
-import importlib
+from qiskit_dynamics.pulse.pulse_simulator import PulseSimulator
 
-from qiskit import IBMQ, schedule
 #%%
 from qiskit_ibm_provider import IBMProvider
 # IBMProvider.save_account(token='2ea5ea951217c0dd712a85fb93e0dfbc9f22e211b141e86fca50a039627ef60b07f4c2ac5f96207805ae14c17df4e1dd23144dbc6826fc607be539f6041299ce')
@@ -27,7 +22,6 @@ ibm_backend = provider.get_backend('ibmq_lima')
 
 
 #%%
-importlib.reload(qiskit_dynamics.pulse.pulseSimClass)
 from qiskit_dynamics.pulse.pulseSimClass import PulseSimulator
 
 # backend = PulseSimulator.from_backend(ibm_backend, subsystem_list=[0,1,2,3,4])
@@ -50,7 +44,6 @@ gaus = pulse.library.Gaussian(num_samples, amp, sigma,
 gaus.draw()
 
 # %%
-importlib.reload(qiskit_dynamics.pulse.pulseSimClass)
 from qiskit_dynamics.pulse.pulseSimClass import PulseSimulator
 with pulse.build() as schedule:
     pulse.play(gaus, backend.drive_channel(0))

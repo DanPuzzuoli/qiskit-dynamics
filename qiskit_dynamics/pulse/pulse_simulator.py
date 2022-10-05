@@ -12,9 +12,7 @@ from qiskit.result.models import ExperimentResult#, Result
 import logging
 from qiskit.compiler import transpile
 
-from qiskit_dynamics.signals.signals import DiscreteSignal, to_SignalSum
-
-from .utils import requires_submit, format_save_type
+#from .utils import requires_submit, format_save_type
 
 #%%
 # from typing import Union
@@ -57,7 +55,7 @@ def get_counts(state_vector: np.ndarray, n_shots: int, seed: int) -> Dict[str, i
     :param state_vector: The state vector.
     :return: The counts.
     """
-    
+
     probs = compute_probabilities(state_vector, basis_states=convert_to_dressed(static_ham, subsystem_dims=subsystem_dims))
     counts = sample_counts(probs,n_shots=n_shots,seed=seed)
     return counts
@@ -74,9 +72,9 @@ def solver_from_backend(backend: Backend, subsystem_list: List[int]) -> 'PulseSi
         ham_dict = backend.hamiltonian
     else:
         ham_dict = backend.configuration().hamiltonian
-    
+
     static_hamiltonian, hamiltonian_operators, reduced_channels, subsystem_dims = parse_hamiltonian_dict(ham_dict, subsystem_list)
-    
+
     # Remove control channels until I figure them out
     drive_channels = [chan for chan in reduced_channels if 'd' in chan]
     control_channels = [chan for chan in reduced_channels if 'u' in chan]
@@ -201,19 +199,19 @@ class PulseSimulator(BackendV2):
             pulseSim._meas_map = backend.meas_map
             pulseSim.base_backend = backend
         return pulseSim
-    
+
     def acquire_channel(self, qubit: Iterable[int]) -> Union[int, AcquireChannel, None]:
         return self._acquire_channel(qubit)
-    
+
     def drive_channel(self, qubit: int) -> Union[int, DriveChannel, None]:
         return self._drive_channel(qubit)
 
     def control_channel(self, qubit: int) -> Union[int, ControlChannel, None]:
         return self._control_channel(qubit)
-    
+
     def measure_channel(self, qubit: int) -> Union[int, MeasureChannel, None]:
         return self._measure_channel(qubit)
-    
+
     def run(self, run_input: Union[QuantumCircuit, Schedule, ScheduleBlock], y0, t_span, **options) -> Result:
         """Run on the backend.
 
@@ -257,7 +255,7 @@ class PulseSimulator(BackendV2):
         # print(experiments)
         output = self._run(experiments, y0, t_span, job_id)
         return output
-        
+
 
         # return pulse_job
 
@@ -295,16 +293,16 @@ class PulseSimulator(BackendV2):
         if format_result:
             return format_results(output)
         return output
-    
+
     def _execute(self, schedule: Schedule, y0, t_span):
         return result_dict_from_sol(self.solver.solve(t_span = t_span, y0=y0, signals=schedule))
 
     def get_solver(self):
         return self.solver
-    
+
     def _default_options(self):
         pass
-    
+
     def max_circuits(self):
         pass
 
@@ -340,12 +338,13 @@ class PulseSimulator(BackendV2):
                 measurement mapping
         """
         return self._meas_map
-    
+
 
 
 from qiskit.providers import JobV1 as Job
 from qiskit.providers import JobStatus, JobError
-from .utils import DEFAULT_EXECUTOR, requires_submit
+#from .utils import DEFAULT_EXECUTOR, requires_submit
+'''
 class pulseJob(Job):
     def __init__(self, experiments, backend: Backend, job_id: str, **kwargs) -> None:
         super().__init__(backend=backend, job_id=job_id, **kwargs)
@@ -353,7 +352,7 @@ class pulseJob(Job):
         self.experiments = experiments
         self._future = None
         self._fn = backend.run
-    
+
     def submit(self):
         """Submit the job to the backend for execution.
 
@@ -365,7 +364,7 @@ class pulseJob(Job):
         if self._future is not None:
             raise JobError("Aer job has already been submitted.")
         self._future = self._executor.submit(self._fn, self.experiments, self._job_id)
-        
+
 
     @requires_submit
     def result(self, timeout=None):
@@ -433,4 +432,4 @@ class pulseJob(Job):
     def executor(self):
         """Return the executor for this job"""
         return self._executor
-
+'''
