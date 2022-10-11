@@ -24,102 +24,83 @@ from qiskit import QiskitError
 from qiskit.quantum_info import DensityMatrix, Statevector
 
 
-def labels_generator(
-    subsystem_dims: List[int], array: Optional[bool] = False
+def tensor_state_label_generator(
+    subsystem_dims: List[int], as_str: Optional[bool] = True
 ) -> List[Union[str, List[int]]]:
-    """Generate labels for a given system in a traditional order incrementing the
-    first qubit through all its levels, then incrememnting the next qubit once and
-    going back up the levels with the previous qubit, and so on. Can return either
-    the string or array version of the labels. The result for a 2x 3 level qubit system
-    is ['01', '02', '10', '11', '12', '20', '21', '22'].
+    """Generate ordered classical state labels for a tensor product system.
+
+    Subsystem ordering in the labels is the reverse of the dimensions given in ``subsystem_dims``.
+    E.g. with ``subsystem_dims = [3, 2]``, the returned labels are
+    ``['00', '01', '02', '10', '11', '12']``. The ``as_str`` optional argument indicates whether
+    to return as a list or as a string. This defaults to ``True``, but if ``False``, individual
+    labels are returned in a list format, e.g. the string-formatted label ``'01'`` will be
+    returned as the list ``[0, 1]``.
+
     Args:
-        subsystem_dims: The dimensions of each subsystem of the general system.
-        array : Flag to determine type of label. Defaults to False.
+        subsystem_dims: The dimensions of each subsystem.
+        as_str: Return labels as string, defaults to True.
 
     Returns:
         List of system labels either in a string or list format.
     """
-    labels = [[0 for i in range(len(subsystem_dims))]]
+    # initialize labels list
+    zero_prefactor = [0] * (len(subsystem_dims) - 1)
+    labels = [zero_prefactor + [x] for x in range(subsystem_dims[0])]
 
-    for subsys_ind, dim in enumerate(subsystem_dims):
+    for idx, dim in enumerate(subsystem_dims[1:]):
         new_labels = []
-        for state in range(dim)[1:]:
-            if subsys_ind == 0:
-                label = [0 for i in range(len(subsystem_dims))]
-                label[subsys_ind] = state
-                new_labels.append(label)
-            else:
-                for label in labels:
-                    new_label = label.copy()
-                    new_label[subsys_ind] = state
-                    new_labels.append(new_label)
+        for counter in range(1, dim):
+            for label in labels:
+                new_label = label.copy()
+                new_label[-(idx + 2)] = counter
+                new_labels.append(new_label)
         labels += new_labels
 
-    for l in labels:
-        l.reverse()
-
-    if not array:
+    if as_str:
         labels = [[str(x) for x in lab] for lab in labels]
         labels = ["".join(lab) for lab in labels]
 
     return labels
 
 
-def convert_to_dressed(
-    static_ham: np.ndarray, subsystem_dims: List[int]
+def get_dressed_state_data(
+    static_hamiltonian: np.ndarray, subsystem_dims: List[int]
 ) -> Union[Dict[str, np.ndarray], List[float], Dict[str, float]]:
-    """Generate the dressed states for a given static hamiltonian. For each eigenvalue
-    of the hamiltonian, match it to an undressed state by finding the argmax of the
-    eigenvalue and mapping it to a corresponding undressed label. In addition, calculate
-    the dressed frequencies for each subsystem.
+    """Assuming it is nearly diagonal, get the eigenvalues and corresponding dressed states for
+    a Hamiltonian.
+
+    This function is essentially a wrapper around ``numpy.linalg.eigh``, but
+    sorts the eigenvectors according to the value of ``np.argmax(np.abs(evec))``. It also
+    validates that this is unique for each eigenvector.
 
     Args:
-        static_ham: Time-independent hamiltonian for the system.
+        static_hamiltonian: Static part of a Hamiltonian.
         subsystem_dims: Dimensions of the subsystems composing the system.
-
     Raises:
-        QiskitError: Multiple eigenvalues map to the same dressed state.
-        QiskitError: No dressed state found for a first excited or base state.
-
+        QiskitError: If ``np.argmax(np.abs(evec))`` is non-unique across eigenvectors.
     Returns:
-        a dictionary of dressed states, a list of dressed frequencies, a
-        dictionary of dressed eigenvalues
+        Tuple: a pair of arrays, one containing eigenvalues and one containing corresponding
+        eigenvectors.
     """
 
-    evals, estates = la.eigh(static_ham)
+    evals, evecs = la.eigh(static_hamiltonian)
 
-    labels = labels_generator(subsystem_dims)
+    dressed_evals = np.zeros_like(evals)
+    dressed_states = np.zeros_like(evecs)
 
-    dressed_states = {}
-    dressed_evals = {}
-    dressed_freqs = {}
+    found_positions = []
+    for eval, evec in zip(evals, evecs):
 
-    for i, estate in enumerate(estates):
+        position = np.argmax(np.abs(evec))
+        if position in found_positions:
+            raise QiskitError("Dressed-state sorting failed due to overlap.")
+        else:
+            found_positions.append(position)
 
-        pos = np.argmax(np.abs(estate))
-        lab = labels[pos]
+        dressed_states[position] = evec
+        dressed_evals[position] = eval
 
-        if lab in dressed_states:
-            raise QiskitError("Found overlap of dressed states")
-
-        dressed_states[lab] = estate
-        dressed_evals[lab] = evals[i]
-
-    dressed_freqs = []
-    for subsys, _ in enumerate(subsystem_dims):
-        lab_excited = ["0" if i != subsys else "1" for i in range(len(subsystem_dims))]
-        lab_excited.reverse()
-        lab_excited = "".join(lab_excited)
-        try:
-            energy = dressed_evals[lab_excited] - dressed_evals[labels[0]]
-        except KeyError as nokey:
-            raise QiskitError("missing eigenvalue for a first excited or base state") from nokey
-
-        dressed_freqs.append(energy / (2 * np.pi))
-
-    # add testing for dressed frequencies
-    # Should dressed frequencies be a dict as well? -- YES -- label by subsystem
-    return dressed_states, dressed_freqs, dressed_evals
+    return dressed_evals, dressed_states
 
 
 def compute_probabilities(
