@@ -83,7 +83,7 @@ def get_dressed_state_data(
         eigenvectors.
     """
 
-    evals, evecs = la.eigh(static_hamiltonian)
+    evals, evecs = la.eigh(np.array(static_hamiltonian))
 
     dressed_evals = np.zeros_like(evals)
     dressed_states = np.zeros_like(evecs)

@@ -28,6 +28,7 @@ from qiskit.providers.backend import Backend, BackendV1, BackendV2
 from qiskit.pulse.channels import AcquireChannel, DriveChannel, MeasureChannel, ControlChannel
 
 from qiskit_dynamics import Solver
+from qiskit_dynamics.array import Array
 from qiskit_dynamics.models import HamiltonianModel
 from qiskit_dynamics.pulse.backend_parser.string_model_parser import parse_hamiltonian_dict
 
@@ -73,8 +74,11 @@ class PulseSimulator(BackendV2):
         )
         self.solver = solver
 
+        # Question:
+        # - Should these be optional?
+        self.subsystem_dims = subsystem_dims
         if subsystem_labels is None:
-            subsystem_labels = np.arange(len(subsystem_dims), dtype=int)
+            self.subsystem_labels = np.arange(len(subsystem_dims), dtype=int)
 
         # get the static hamiltonian in the lab frame and undressed basis
         # assumes that the solver was constructed with operators specified in lab frame
@@ -89,6 +93,9 @@ class PulseSimulator(BackendV2):
         static_hamiltonian = 1j * rotating_frame.generator_out_of_frame(
             t=0., operator=-1j * static_hamiltonian
         )
+
+        # convert to numpy array
+        static_hamiltonian = np.array(Array(static_hamiltonian).data)
 
         # get the dressed states
         dressed_evals, dressed_states = get_dressed_state_data(static_hamiltonian, subsystem_dims)
@@ -131,6 +138,7 @@ class PulseSimulator(BackendV2):
     def run(
         self,
         experiments: Union[QuantumCircuit, Schedule, ScheduleBlock],
+        shots: int = 1,
         y0 = None,
         validate: Optional[bool] = False,
         solver_options: Optional[dict] = None,
@@ -138,24 +146,25 @@ class PulseSimulator(BackendV2):
     ) -> Result:
         """Run on the backend.
 
+        Questions:
+        - Should we force y0 to be a quantum_info state? This currently assumes that
+        - Should we provide optional arguments to run that allow the user to specify different
+          modes of simulation? E.g.
+            - Just simulate the state
+            - Simulate the unitary or process
+            - Return probabilities
+            - Return counts
+          For now, assuming just counts
+        - Validate which channels are available on device?
+
         Should return counts, for now just return probabilities
         """
 
         if validate:
+            # to do:
+            # - add validation that only a single measurement occurs
+            #   - this could also be part of the later parsing
             _validate_experiments(experiments)
-
-        if y0 is None:
-            y0 = Statevector(self._dressed_states[0])
-
-        #job_id = str(uuid.uuid4())
-        output = self._run(experiments, y0, job_id='', solver_options=solver_options)
-        return output
-
-
-    def _run(self, experiments, y0, job_id='', format_result=True, solver_options=None):
-        """Run a job"""
-        # Start timer
-        start = time.time()
 
         if not isinstance(experiments, list):
             experiments = [experiments]
@@ -163,46 +172,42 @@ class PulseSimulator(BackendV2):
         if solver_options is None:
             solver_options = {}
 
+        if y0 is None:
+            y0 = Statevector(self._dressed_states[0])
+
+        # to do:
+        # - find time the measurement occurs
         t_span = [[0, sched.duration * self.solver._dt] for sched in experiments]
-        output = self.solver.solve(t_span=t_span, y0=y0, signals=experiments, **solver_options)
-        return output
 
-        #output = result_dict_from_sol(self.solver.solve(t_span = t_span, y0=y0, signals=experiments))
+        start = time.time()
+        results = self.solver.solve(t_span=t_span, y0=y0, signals=experiments, **solver_options)
 
-        ######
-        # Do we need this output validation step? It seems like it might have more to do with
-        # C++ interfacing from Aer
-        ######
+        # construct counts for each experiment
+        counts_dicts = []
+        for ts, result in zip(t_span, results):
+            yf = result.y[-1]
+            if isinstance(yf, Statevector):
+                yf = self.solver.model.rotating_frame.state_out_of_frame(t=ts[-1], y=yf)
+                yf = Statevector(np.array(yf), dims=self.subsystem_dims)
+            elif isinstance(yf, DensityMatrix):
+                yf = self.solver.model.rotating_frame.operator_out_of_frame(t=ts[-1], y=yf)
+                yf = DensityMatrix(np.array(yf), dims=self.subsystem_dims)
 
+            counts_dicts.append(yf.sample_counts(shots=shots))
 
-        # Validate output
-        #if not isinstance(output, dict):
-        #    logger.error("%s: simulation failed.", self.name)
-        #    if output:
-        #        logger.error('Output: %s', output)
-        #    raise QiskitError(
-        #        "simulation terminated without returning valid output.")
+        return counts_dicts
 
+        #job_id = str(uuid.uuid4())
+        #output["job_id"] = job_id
+        #output["date"] = datetime.datetime.now().isoformat()
+        #output["backend_name"] = self.name
+        #output["backend_version"] = self.backend_version
 
-        # Display warning if simulation failed
-        #if not output.get("success", False):
-        #    msg = "Simulation failed"
-        #    if "status" in output:
-        #        msg += f" and returned the following error message:\n{output['status']}"
-        #    logger.warning(msg)
+        #output["time_taken"] = time.time() - start
 
-        # Format results
-        output["job_id"] = job_id
-        output["date"] = datetime.datetime.now().isoformat()
-        output["backend_name"] = self.name
-        output["backend_version"] = self.backend_version
-
-        # Add execution time
-        output["time_taken"] = time.time() - start
-
-        if format_result:
-            return format_results(output)
-        return output
+        #if format_result:
+        #    return format_results(output)
+        #return output
 
     @property
     def meas_map(self) -> List[List[int]]:
