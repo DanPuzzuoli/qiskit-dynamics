@@ -25,7 +25,9 @@ from qiskit.result.models import ExperimentResult#, Result
 import logging
 
 from qiskit.providers.backend import Backend, BackendV1, BackendV2
+from qiskit import pulse
 from qiskit.pulse.channels import AcquireChannel, DriveChannel, MeasureChannel, ControlChannel
+from qiskit.pulse.transforms.canonicalization import block_to_schedule
 
 from qiskit_dynamics import Solver
 from qiskit_dynamics.array import Array
@@ -62,9 +64,18 @@ class PulseSimulator(BackendV2):
         Design questions
             - Simulating measurement requires subsystem dims and labels, should we allow this
               to be constructed without them, and then measurement is just not possible?
-            - Should we add the ability to do custom measurements? I think yes, we do want
-              things to be fully customizable.
+            - Should we add the ability to do custom measurements?
+            - Should we fill out defaults by extracting them from Solver?
+            - If no set frequency commands are set in the schedule, what should the channel
+              frequencies be?
+                - How are control channel frequencies handled these days?
+            - Fill out properties
+
+        Notes:
+            - Add validation of the Solver object, verifying that its configured to simulate pulse
+              schedules
         """
+        ##############################################################################################
         # what to put for provider?
         super().__init__(
             provider=None,
@@ -72,13 +83,12 @@ class PulseSimulator(BackendV2):
             description='Pulse enabled simulator backend.',
             backend_version=0.1
         )
-        self.solver = solver
 
-        # Question:
-        # - Should these be optional?
-        self.subsystem_dims = subsystem_dims
-        if subsystem_labels is None:
-            self.subsystem_labels = np.arange(len(subsystem_dims), dtype=int)
+        ##############################################################################################
+        # Make these into properties?
+        self.solver = solver
+        self.subsystem_dims = subsystem_dims or [solver.model.dim]
+        self.subsystem_labels = subsystem_labels or np.arange(len(subsystem_dims), dtype=int)
 
         # get the static hamiltonian in the lab frame and undressed basis
         # assumes that the solver was constructed with operators specified in lab frame
@@ -98,6 +108,8 @@ class PulseSimulator(BackendV2):
         static_hamiltonian = np.array(Array(static_hamiltonian).data)
 
         # get the dressed states
+        ##############################################################################################
+        # Make these into properties?
         dressed_evals, dressed_states = get_dressed_state_data(static_hamiltonian, subsystem_dims)
         self._dressed_evals = dressed_evals
         self._dressed_states = dressed_states
@@ -146,7 +158,7 @@ class PulseSimulator(BackendV2):
     ) -> Result:
         """Run on the backend.
 
-        Questions:
+        Notes/questions:
         - Should we force y0 to be a quantum_info state? This currently assumes that
         - Should we provide optional arguments to run that allow the user to specify different
           modes of simulation? E.g.
@@ -155,19 +167,24 @@ class PulseSimulator(BackendV2):
             - Return probabilities
             - Return counts
           For now, assuming just counts
-        - Validate which channels are available on device?
+        - Validate which channels are available on device before running? Can the BackendV2 be
+          set up to do this automatically somehow?
+        - What is the formatting for the results when measuring a subset of qubits? E.g. if
+          you measure qubits [0, 2, 3], do you get counts for 3-bit strings out?
+        - Add validation that only qubits present in the model are being measured. This may
+          happen automatically as the measurement code will fail, but would be good to raise
+          a proper error.
+        - How to handle binning of higher level measurements? E.g. should everything above 0
+          count as 0?
+        - What to do with memory and register slots?
 
-        Should return counts, for now just return probabilities
+        To test:
+        - Measuring a subset of qubits when more than one present
+        - If t_span=[0, 0] it seems that NaNs appear for JAX simulation - should solve this.
         """
 
         if validate:
-            # to do:
-            # - add validation that only a single measurement occurs
-            #   - this could also be part of the later parsing
             _validate_experiments(experiments)
-
-        if not isinstance(experiments, list):
-            experiments = [experiments]
 
         if solver_options is None:
             solver_options = {}
@@ -175,16 +192,47 @@ class PulseSimulator(BackendV2):
         if y0 is None:
             y0 = Statevector(self._dressed_states[0])
 
-        # to do:
-        # - find time the measurement occurs
-        t_span = [[0, sched.duration * self.solver._dt] for sched in experiments]
+        # to do: add handling of circuits
+        schedules = _to_schedule_list(experiments)
+
+        # get the acquires instructions and simulation times
+        t_span = []
+        measurement_subsystems_list = []
+        for schedule in schedules:
+            schedule_acquires = []
+            schedule_acquire_times = []
+            for start_time, inst in schedule.instructions:
+                if isinstance(inst, pulse.Acquire):
+                    schedule_acquires.append(inst)
+                    schedule_acquire_times.append(start_time)
+
+            # maybe need to validate more here
+            _validate_acquires(schedule_acquire_times, schedule_acquires)
+
+            t_span.append([0, schedule_acquire_times[0]])
+            measurement_subsystems_list.append([inst.channel.index for inst in schedule_acquires])
+            measurement_subsystems_list[-1].sort()
+
+        # map measurement subsystems from labels to correct index
+        if self.subsystem_labels:
+            new_measurement_subsystems_list = []
+            for measurement_subsystems in measurement_subsystems_list:
+                new_measurement_subsystems = []
+                for subsystem in measurement_subsystems:
+                    if subsystem in self.subsystem_labels:
+                        new_measurement_subsystems.append(self.subsystem_labels.index(subsystem))
+                    else:
+                        raise QiskitError(f'Attempted to measure subsystem {subsystem}, but it is not in subsystem_list.')
+                new_measurement_subsystems_list.append(new_measurement_subsystems)
+
+            measurement_subsystems_list = new_measurement_subsystems_list
 
         start = time.time()
-        results = self.solver.solve(t_span=t_span, y0=y0, signals=experiments, **solver_options)
+        results = self.solver.solve(t_span=t_span, y0=y0, signals=schedules, **solver_options)
 
         # construct counts for each experiment
         counts_dicts = []
-        for ts, result in zip(t_span, results):
+        for ts, result, measurement_subsystems in zip(t_span, results, measurement_subsystems_list):
             yf = result.y[-1]
             if isinstance(yf, Statevector):
                 yf = self.solver.model.rotating_frame.state_out_of_frame(t=ts[-1], y=yf)
@@ -193,7 +241,7 @@ class PulseSimulator(BackendV2):
                 yf = self.solver.model.rotating_frame.operator_out_of_frame(t=ts[-1], y=yf)
                 yf = DensityMatrix(np.array(yf), dims=self.subsystem_dims)
 
-            counts_dicts.append(yf.sample_counts(shots=shots))
+            counts_dicts.append(yf.sample_counts(shots=shots, qargs=measurement_subsystems))
 
         return counts_dicts
 
@@ -261,6 +309,39 @@ def _validate_experiments(experiment, accept_list=True):
             _validate_experiments(e, accept_list=False)
     elif not isinstance(experiment, (Schedule, ScheduleBlock)):
         raise QiskitError(f"Experiment type {type(experiment)} not supported by PulseSimulator.run.")
+
+
+# this should be rolled into _validate_experiments
+def _validate_acquires(schedule_acquire_times, schedule_acquires):
+    """Validate the acquire instructions.
+    For now, make sure all acquires happen at one time.
+    """
+
+    if len(schedule_acquire_times) == 0:
+        raise QiskitError("At least one measurement must be present in each schedule.")
+
+    start_time = schedule_acquire_times[0]
+    for time in schedule_acquire_times[1:]:
+        if time != start_time:
+            raise QiskitError("PulseSimulator.run only supports measurements at one time.")
+
+def _to_schedule_list(schedules):
+    if not isinstance(schedules, list):
+        schedules = [schedules]
+
+    new_schedules = []
+    for sched in schedules:
+        if isinstance(sched, pulse.ScheduleBlock):
+            new_schedules.append(block_to_schedule(sched))
+        elif isinstance(sched, pulse.Schedule):
+            new_schedules.append(sched)
+        else:
+            raise Exception('invalid Schedule type')
+    return new_schedules
+
+######
+# OLD
+######
 
 
 def get_counts(state_vector: np.ndarray, n_shots: int, seed: int) -> Dict[str, int]:
