@@ -36,7 +36,7 @@ from ..solver_utils import setup_args_lists
 try:
     import jax.numpy as jnp
     from jax import vmap
-    from jax.lax import associative_scan
+    from jax.lax import associative_scan, scan
 except ImportError:
     pass
 
@@ -111,7 +111,7 @@ class _PerturbativeSolver(ABC):
         return all_results
 
     @abstractmethod
-    def _solve(self, t0: float, n_steps: int, y0: Array, signals: List[Signal]) -> OdeResult:
+    def _solve(self, t0: float, n_steps: int, y0: Array, signals: List[Signal], mode: Optional[str] = None) -> OdeResult:
         """Solve once for a list of signals, initial state, initial time, and number of steps.
 
         Args:
@@ -119,6 +119,8 @@ class _PerturbativeSolver(ABC):
             n_steps: Number of time steps to solve for.
             y0: Initial state at time t0.
             signals: List of signals.
+            mode: Option only to be used if in JAX mode. Either "vmap" or "scan", defaults to
+                "vmap".
 
         Returns:
             OdeResult: Results object.
@@ -156,8 +158,12 @@ def _perturbative_solve_jax(
     y0: np.ndarray,
     t0: float,
     n_steps: int,
+    mode: Optional[str] = None
 ) -> np.ndarray:
     """JAX version of _perturbative_solve."""
+    if mode is None:
+        mode = "vmap"
+
     U0 = model.rotating_frame.state_out_of_frame(
         t0, jnp.eye(model.Udt.shape[0], dtype=complex)
     ).data
@@ -169,8 +175,18 @@ def _perturbative_solve_jax(
 
     y = U0 @ y0
 
-    step_propagators = vmap(single_step)(jnp.flip(sig_cheb_coeffs.transpose(), axis=0))
-    y = associative_scan(jnp.matmul, step_propagators, axis=0)[-1] @ y
+    if mode == "vmap":
+        step_propagators = vmap(single_step)(jnp.flip(sig_cheb_coeffs.transpose(), axis=0))
+        y = associative_scan(jnp.matmul, step_propagators, axis=0)[-1] @ y
+    elif mode == "scan":
+        def scan_func(carry, x):
+            cheb_coeffs_current = x
+            y_current = carry
+            return single_step(cheb_coeffs_current) @ y_current, None
+        
+        y = scan(f=scan_func, init=y, xs=sig_cheb_coeffs.transpose())
+    else:
+        raise QiskitError(f"Invalid mode value {mode}.")
 
     return Uf @ y
 
