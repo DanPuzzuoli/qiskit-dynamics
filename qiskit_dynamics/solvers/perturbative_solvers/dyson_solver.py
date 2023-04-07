@@ -185,11 +185,11 @@ class DysonSolver(_PerturbativeSolver):
         )
         super().__init__(model=model)
 
-    def _solve(self, t0: float, n_steps: int, y0: Array, signals: List[Signal]) -> OdeResult:
+    def _solve(self, t0: float, n_steps: int, y0: Array, signals: List[Signal], mode: Optional[str] = None) -> OdeResult:
         ys = None
         if Array.default_backend() == "jax":
             single_step = lambda x: self.model.evaluate(x).data
-            ys = [y0, _perturbative_solve_jax(single_step, self.model, signals, y0, t0, n_steps)]
+            ys = [y0, _perturbative_solve_jax(single_step, self.model, signals, y0, t0, n_steps, mode)]
         else:
             single_step = lambda coeffs, y: self.model.evaluate(coeffs) @ y
             ys = [y0, _perturbative_solve(single_step, self.model, signals, y0, t0, n_steps)]

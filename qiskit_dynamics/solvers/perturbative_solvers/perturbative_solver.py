@@ -18,7 +18,7 @@ Perturbative solver base class.
 """
 
 from abc import ABC, abstractmethod
-from typing import Callable, List, Union
+from typing import Callable, List, Union, Optional
 
 import numpy as np
 from scipy.integrate._ivp.ivp import OdeResult
@@ -64,6 +64,7 @@ class _PerturbativeSolver(ABC):
         n_steps: Union[int, List[int]],
         y0: Union[Array, List[Array]],
         signals: Union[List[Signal], List[List[Signal]]],
+        mode: Optional[str] = None,
     ) -> Union[OdeResult, List[OdeResult]]:
         """Solve given an initial time, number of steps, signals, and initial state.
 
@@ -84,6 +85,8 @@ class _PerturbativeSolver(ABC):
         Raises:
             QiskitError: If improperly formatted arguments.
         """
+        ##############################################################################################
+        # Add mode error raising here, and properly document it
 
         # validate and setup list of simulations
         [t0_list, n_steps_list, y0_list, signals_list], multiple_sims = setup_args_lists(
@@ -102,7 +105,7 @@ class _PerturbativeSolver(ABC):
             if len(args[-1]) != len(self.model.operators):
                 raise QiskitError("Signals must be the same length as the operators in the model.")
             all_results.append(
-                self._solve(t0=args[0], n_steps=args[1], y0=args[2], signals=args[3])
+                self._solve(t0=args[0], n_steps=args[1], y0=args[2], signals=args[3], mode=mode)
             )
 
         if multiple_sims is False:
@@ -184,7 +187,7 @@ def _perturbative_solve_jax(
             y_current = carry
             return single_step(cheb_coeffs_current) @ y_current, None
         
-        y = scan(f=scan_func, init=y, xs=sig_cheb_coeffs.transpose())
+        y = scan(f=scan_func, init=y, xs=sig_cheb_coeffs.transpose())[0]
     else:
         raise QiskitError(f"Invalid mode value {mode}.")
 
